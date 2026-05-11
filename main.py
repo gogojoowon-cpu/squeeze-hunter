@@ -12,7 +12,7 @@ Fix 9: REST /api/snapshot fallback (새로고침 빈화면 방지)
 Fix 10: 모바일 테마 드롭다운
 """
 from __future__ import annotations
-import math, random, time, json, asyncio, threading, io
+import math, random, time, json, asyncio, threading, io, os
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, date, timedelta
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -483,68 +483,124 @@ def calc_rsi(closes)->float:
 # ════════════════════════════════════════════════════════════════
 # 메인 데이터 로더
 # ════════════════════════════════════════════════════════════════
-def load_real(syms:list)->dict:
-    if not HAS_YF: return {}
-    out={}; batch=25
-    print("📱 소셜 데이터..."); social=fetch_social()
-    print("📋 FINRA..."); finra=fetch_finra(set(syms))
-    print(f"📡 yfinance ({len(syms)}개)...")
+def fetch_polygon_snapshots(syms:list, api_key:str)->dict:
+    """Polygon/Massive API 배치 스냅샷"""
+    if not HAS_REQ or not api_key: return {}
+    out={}
+    batch=100
     for i in range(0,len(syms),batch):
         grp=syms[i:i+batch]
         try:
-            tks=yf.Tickers(" ".join(grp))
-            for sym in grp:
-                try:
-                    t=tks.tickers.get(sym)
-                    if not t: continue
-                    info=t.info
-                    hist=t.history(period="60d",interval="1d")
-                    if hist.empty or len(hist)<3: continue
-                    price=float(info.get("currentPrice") or info.get("regularMarketPrice") or hist["Close"].iloc[-1] or 0)
-                    if price<=0: continue
-                    vol=int(hist["Volume"].iloc[-1])
-                    avg_vol=float(hist["Volume"].tail(20).mean()) or 1
-                    # Fix 5: 거의 거래 없는 유령 종목 제외
-                    if avg_vol<10000: continue
-                    h52=float(info.get("fiftyTwoWeekHigh") or price)
-                    l52=float(info.get("fiftyTwoWeekLow")  or price)
-                    rsi_v=calc_rsi(hist["Close"])
-                    si_yf=float(info.get("shortPercentOfFloat") or 0)*100
-                    si_fin=finra.get(sym,0)
-                    si_pct=si_fin if si_fin>0 else si_yf
-                    dtc_v=float(info.get("shortRatio") or 0)
-                    float_sh=int(info.get("floatShares") or info.get("sharesOutstanding") or 0)
-                    si_sh=int(info.get("sharesShort") or 0)
-                    mcap=float(info.get("marketCap") or 0)
-                    sec_kr=SECTOR_KR.get(info.get("sector",""),"기타")
-                    name=info.get("longName") or info.get("shortName") or sym
-                    chg=round((price-float(hist["Close"].iloc[-2]))/max(float(hist["Close"].iloc[-2]),0.01)*100,2) if len(hist)>=2 else 0.0
-                    sd=social.get(sym,{})
-                    ctb_e,util_e=estimate_ctb(si_pct,dtc_v)
-                    out[sym]={
-                        "symbol":sym,"name":name,"sector":sec_kr,
-                        "theme":SYM_THEME.get(sym,"기타"),
-                        "market_cap":mcap,"has_dilution":False,
-                        "price":round(price,2),"volume":vol,
-                        "vol_spike":round(vol/max(avg_vol,1),3),
-                        "dist_52w":round((h52-price)/max(h52,1),3),
-                        "high_52w":round(h52,2),"low_52w":round(l52,2),
-                        "rsi14":rsi_v,"si_pct":round(si_pct,2),"si_shares":si_sh,
-                        "dtc":round(dtc_v,2),"float_shares":float_sh,
-                        "rotation":round(vol/max(float_sh,1),5) if float_sh>0 else 0,
-                        "ctb":ctb_e,"util":util_e,"ctb_src":"estimated",
-                        "gamma_conc":0.0,
-                        "social_velocity":float(sd.get("social_velocity",0)),
-                        "sentiment":float(sd.get("sentiment",random.uniform(-0.2,0.5))),
-                        "mentions":int(sd.get("mentions",0)),
-                        "soc_src":sd.get("src","demo"),
-                        "has_catalyst":False,"change_pct":chg,
-                    }
-                    print(f"  ✅ {sym}: ${price:.2f} SI:{si_pct:.1f}% DTC:{dtc_v:.1f} RSI:{rsi_v:.0f}")
-                except: pass
-            time.sleep(0.4)
-        except: pass
-    print(f"✅ yfinance 완료: {len(out)}개")
+            r=requests.get(
+                "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers",
+                params={"tickers":",".join(grp),"apiKey":api_key},timeout=15)
+            if r.status_code!=200:
+                print(f"  ⚠️ Polygon {r.status_code}"); continue
+            for t in r.json().get("tickers",[]):
+                sym=t.get("ticker","")
+                if not sym: continue
+                day=t.get("day",{}); prev=t.get("prevDay",{})
+                price=float(t.get("lastTrade",{}).get("p",0) or day.get("c",0) or 0)
+                if price<=0: continue
+                prev_c=float(prev.get("c",price) or price)
+                out[sym]={"price":round(price,2),"volume":int(day.get("v",0)),
+                    "change_pct":round((price-prev_c)/max(prev_c,0.01)*100,2),
+                    "high":float(day.get("h",price)),"low":float(day.get("l",price))}
+            print(f"  📡 Polygon: {len(out)}개/{i+len(grp)}")
+            time.sleep(0.3)
+        except Exception as e: print(f"  ⚠️ Polygon 배치: {e}")
+    return out
+
+def fetch_polygon_aggs(sym:str, api_key:str)->dict:
+    """90일 OHLCV → RSI/52주고저/거래량평균"""
+    if not HAS_REQ or not api_key: return {}
+    try:
+        from datetime import date,timedelta
+        end=date.today().strftime("%Y-%m-%d")
+        start=(date.today()-timedelta(days=90)).strftime("%Y-%m-%d")
+        r=requests.get(f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day/{start}/{end}",
+            params={"adjusted":"true","sort":"asc","limit":90,"apiKey":api_key},timeout=10)
+        if r.status_code!=200: return {}
+        results=r.json().get("results",[])
+        if len(results)<5: return {}
+        closes=[x["c"] for x in results]
+        vols=[x["v"] for x in results]
+        highs=[x["h"] for x in results]
+        lows=[x["l"] for x in results]
+        if HAS_PD:
+            import pandas as pd
+            rsi_v=calc_rsi(pd.Series(closes))
+            avg_vol=float(pd.Series(vols).tail(20).mean()) or 1
+        else:
+            rsi_v=50.0; avg_vol=float(sum(vols[-20:])/max(len(vols[-20:]),1))
+        h52=max(highs); l52=min(lows); cur=closes[-1]
+        return {"rsi14":rsi_v,"avg_vol":avg_vol,"high_52w":round(h52,2),
+                "low_52w":round(l52,2),"dist_52w":round((h52-cur)/max(h52,1),3),
+                "vol_spike":round(vols[-1]/max(avg_vol,1),3)}
+    except: return {}
+
+def fetch_polygon_details(sym:str, api_key:str)->dict:
+    """종목 이름/시총/플로트"""
+    if not HAS_REQ or not api_key: return {}
+    try:
+        r=requests.get(f"https://api.polygon.io/v3/reference/tickers/{sym}",
+            params={"apiKey":api_key},timeout=10)
+        if r.status_code!=200: return {}
+        d=r.json().get("results",{})
+        return {"name":d.get("name",sym),"market_cap":float(d.get("market_cap",0) or 0),
+                "float_shares":int(d.get("share_class_shares_outstanding",0) or 0),
+                "sector":d.get("sic_description","기타")}
+    except: return {}
+
+def load_real(syms:list)->dict:
+    """Polygon/Massive API로 실제 주가 데이터 로드"""
+    POLY_KEY=os.environ.get("POLYGON_API_KEY","")
+    if not POLY_KEY:
+        print("⚠️ POLYGON_API_KEY 없음 → 데모 데이터 사용")
+        return {}
+    if not HAS_REQ: return {}
+    out={}
+    print("📱 소셜 데이터..."); social=fetch_social()
+    print(f"📡 Polygon 스냅샷 ({len(syms)}개)...")
+    snaps=fetch_polygon_snapshots(syms,POLY_KEY)
+    print(f"✅ 스냅샷 {len(snaps)}개")
+    for sym in syms:
+        snap=snaps.get(sym)
+        if not snap: continue
+        try:
+            price=snap["price"]; vol=snap["volume"]
+            agg=fetch_polygon_aggs(sym,POLY_KEY)
+            rsi_v=agg.get("rsi14",50.0)
+            avg_vol=agg.get("avg_vol",max(vol,1))
+            h52=agg.get("high_52w",price); l52=agg.get("low_52w",price)
+            dist_52=agg.get("dist_52w",0.5); vol_spk=agg.get("vol_spike",1.0)
+            details=fetch_polygon_details(sym,POLY_KEY)
+            name=details.get("name",sym)
+            mcap=details.get("market_cap",0)
+            float_sh=details.get("float_shares",0)
+            sec_kr=SECTOR_KR.get(details.get("sector",""),"기타")
+            sd=social.get(sym,{})
+            ctb_e,util_e=estimate_ctb(0,0)
+            out[sym]={"symbol":sym,"name":name,"sector":sec_kr,
+                "theme":SYM_THEME.get(sym,"기타"),
+                "market_cap":mcap,"has_dilution":False,
+                "price":round(price,2),"volume":vol,
+                "vol_spike":vol_spk,"dist_52w":dist_52,
+                "high_52w":h52,"low_52w":l52,"rsi14":rsi_v,
+                "si_pct":0.0,"si_shares":0,"dtc":0.0,
+                "float_shares":float_sh,
+                "rotation":round(vol/max(float_sh,1),5) if float_sh>0 else 0,
+                "ctb":ctb_e,"util":util_e,"ctb_src":"estimated",
+                "gamma_conc":0.0,
+                "social_velocity":float(sd.get("social_velocity",0)),
+                "sentiment":float(sd.get("sentiment",random.uniform(-0.2,0.5))),
+                "mentions":int(sd.get("mentions",0)),
+                "soc_src":sd.get("src","demo"),
+                "has_catalyst":False,"change_pct":snap.get("change_pct",0)}
+            print(f"  ✅ {sym}: ${price:.2f} RSI:{rsi_v:.0f}")
+            time.sleep(0.12)
+        except Exception as e: print(f"  ⚠️ {sym}: {e}")
+    print(f"✅ Polygon 완료: {len(out)}개")
     return out
 
 def enrich(syms:list,state:dict):
@@ -611,21 +667,17 @@ def init():
 
 def tick():
     prev={s:_st[s].get("grade","NO_SQUEEZE") for s in _st}
-    # Fix 7: 장중에만 실제 가격 갱신
-    if HAS_YF and is_market_open():
-        sample=random.sample(ALL_SYMBOLS,min(25,len(ALL_SYMBOLS)))
-        try:
-            tks=yf.Tickers(" ".join(sample))
-            for sym in sample:
-                try:
-                    fi=tks.tickers[sym].fast_info
-                    p=float(fi.last_price or 0)
-                    if p>0:
-                        op=_st[sym].get("price",p)
-                        _st[sym]["price"]=round(p,2)
-                        _st[sym]["change_pct"]=round((p-op)/max(op,0.01)*100,2)
-                except: pass
-        except: pass
+    # Fix 7: 장중에만 실제 가격 갱신 (Polygon API)
+    POLY_KEY=os.environ.get("POLYGON_API_KEY","")
+    if HAS_REQ and POLY_KEY and is_market_open():
+        sample=random.sample(ALL_SYMBOLS,min(50,len(ALL_SYMBOLS)))
+        snaps=fetch_polygon_snapshots(sample,POLY_KEY)
+        for sym,snap in snaps.items():
+            if sym in _st:
+                p=snap.get("price",0)
+                if p>0:
+                    _st[sym]["price"]=round(p,2)
+                    _st[sym]["change_pct"]=snap.get("change_pct",0)
 
     soc=fetch_social()
     for sym,sd in soc.items():
