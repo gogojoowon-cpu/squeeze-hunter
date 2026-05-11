@@ -409,7 +409,7 @@ def fetch_social()->dict:
                 vel=((m-p)/p)*100
                 sent=float(item.get("sentiment",0) or 0)
                 out[sym]={"social_velocity":round(vel,1),"sentiment":round(clamp(sent,-1,1),4),
-                          "mentions":m,"src":"apewisdom"}
+                          "mentions":int(m) if m else 0,"src":"apewisdom"}
             if pg>=data.get("page_count",1): break
             time.sleep(1)
         _SOCIAL.clear(); _SOCIAL.update(out)
@@ -484,28 +484,54 @@ def calc_rsi(closes)->float:
 # 메인 데이터 로더
 # ════════════════════════════════════════════════════════════════
 def fetch_polygon_snapshots(syms:list, api_key:str)->dict:
-    """Polygon prev-day close — $29 Starter 플랜 호환"""
+    """Polygon grouped daily — $29 Starter 플랜 호환 (배치 조회)"""
     if not HAS_REQ or not api_key: return {}
+    from datetime import date, timedelta
     out={}
-    for sym in syms:
-        try:
-            # prev close (Starter 플랜 호환)
-            r=requests.get(
-                f"https://api.polygon.io/v2/aggs/ticker/{sym}/prev",
-                params={"adjusted":"true","apiKey":api_key},timeout=8)
-            if r.status_code!=200: continue
-            results=r.json().get("results",[])
-            if not results: continue
-            res=results[0]
-            price=float(res.get("c",0))
-            if price<=0: continue
-            prev_o=float(res.get("o",price))
-            out[sym]={"price":round(price,2),"volume":int(res.get("v",0)),
-                "change_pct":round((price-prev_o)/max(prev_o,0.01)*100,2),
-                "high":float(res.get("h",price)),"low":float(res.get("l",price))}
-            time.sleep(0.05)
-        except: pass
-    print(f"  📡 Polygon prev-close: {len(out)}개/{len(syms)}")
+    # 최근 거래일 찾기 (주말 제외)
+    target = date.today()
+    for _ in range(5):
+        if target.weekday() < 5:
+            break
+        target -= timedelta(days=1)
+    date_str = target.strftime("%Y-%m-%d")
+    try:
+        # grouped daily — 하루 전체 미국 주식 한번에
+        r = requests.get(
+            f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{date_str}",
+            params={"adjusted":"true","apiKey":api_key},timeout=30)
+        if r.status_code == 200:
+            results = r.json().get("results",[])
+            sym_set = set(syms)
+            for res in results:
+                sym = res.get("T","")
+                if sym not in sym_set: continue
+                price = float(res.get("c",0))
+                if price <= 0: continue
+                prev_o = float(res.get("o",price))
+                out[sym]={"price":round(price,2),"volume":int(res.get("v",0) or 0),
+                    "change_pct":round((price-prev_o)/max(prev_o,0.01)*100,2),
+                    "high":float(res.get("h",price)),"low":float(res.get("l",price))}
+            print(f"  📡 Polygon grouped {date_str}: {len(out)}개")
+        else:
+            print(f"  ⚠️ Polygon grouped {r.status_code}: {r.text[:100]}")
+            # fallback: 종목별 prev
+            for sym in syms[:50]:  # 50개만
+                try:
+                    r2=requests.get(f"https://api.polygon.io/v2/aggs/ticker/{sym}/prev",
+                        params={"adjusted":"true","apiKey":api_key},timeout=8)
+                    if r2.status_code!=200: continue
+                    res=r2.json().get("results",[])
+                    if not res: continue
+                    price=float(res[0].get("c",0))
+                    if price<=0: continue
+                    out[sym]={"price":round(price,2),"volume":int(res[0].get("v",0) or 0),
+                        "change_pct":0.0,"high":float(res[0].get("h",price)),"low":float(res[0].get("l",price))}
+                    time.sleep(0.1)
+                except: pass
+            print(f"  📡 Polygon fallback: {len(out)}개")
+    except Exception as e:
+        print(f"  ⚠️ Polygon 오류: {e}")
     return out
 
 def fetch_polygon_aggs(sym:str, api_key:str)->dict:
