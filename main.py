@@ -750,25 +750,42 @@ def fetch_polygon_snapshots(syms:list, api_key:str)->dict:
         target -= timedelta(days=1)
     date_str = target.strftime("%Y-%m-%d")
     try:
-        # grouped daily — 하루 전체 미국 주식 한번에
-        r = requests.get(
-            f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{date_str}",
-            params={"adjusted":"true","apiKey":api_key},timeout=30)
-        if r.status_code == 200:
-            results = r.json().get("results",[])
-            sym_set = set(syms)
+        # grouped daily — 가장 최근 거래일 데이터 (오늘→어제→그제 순으로 시도)
+        from datetime import date, timedelta
+        found_date = None
+        results = []
+        for days_back in range(1, 6):  # 오늘 제외, 어제부터 시도
+            try_date = (date.today() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            r2 = requests.get(
+                f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{try_date}",
+                params={"adjusted":"true","apiKey":api_key}, timeout=30)
+            if r2.status_code == 200:
+                results = r2.json().get("results", [])
+                if results:
+                    found_date = try_date
+                    print(f"  📡 Polygon grouped {try_date}: {len(results)}개 원본")
+                    break
+            time.sleep(0.3)
+
+        if results:
+            sym_set = set(syms) if syms else None
             for res in results:
                 sym = res.get("T","")
-                if sym not in sym_set: continue
-                price = float(res.get("c",0))
+                if not sym: continue
+                if sym_set and sym not in sym_set: continue
+                price = float(res.get("c", 0))
                 if price <= 0: continue
-                prev_o = float(res.get("o",price))
-                out[sym]={"price":round(price,2),"volume":int(res.get("v",0) or 0),
-                    "change_pct":round((price-prev_o)/max(prev_o,0.01)*100,2),
-                    "high":float(res.get("h",price)),"low":float(res.get("l",price))}
-            print(f"  📡 Polygon grouped {date_str}: {len(out)}개")
+                prev_o = float(res.get("o", price))
+                out[sym] = {
+                    "price": round(price, 2),
+                    "volume": int(res.get("v", 0) or 0),
+                    "change_pct": round((price - prev_o) / max(prev_o, 0.01) * 100, 2),
+                    "high": float(res.get("h", price)),
+                    "low": float(res.get("l", price))
+                }
+            print(f"  📡 Polygon grouped {found_date}: {len(out)}개 수집")
         else:
-            print(f"  ⚠️ Polygon grouped {r.status_code}: {r.text[:100]}")
+            print(f"  ⚠️ Polygon grouped: 5일치 모두 데이터 없음")
             # fallback: 종목별 prev
             for sym in syms[:50]:  # 50개만
                 try:
