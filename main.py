@@ -658,68 +658,79 @@ def fetch_polygon_short_volume_batch(syms: list, api_key: str) -> dict:
 
 
 def fetch_all_tickers(api_key: str) -> list:
-    """Polygon/Massive API로 전체 미국 상장 종목 자동 수집
-    exchange는 하나씩 따로 호출 (콤마 여러개 안됨)
-    """
+    """Polygon/Massive API로 전체 미국 상장 종목 자동 수집"""
     if not HAS_REQ or not api_key:
         return []
     all_tickers = []
     seen = set()
-
-    # NASDAQ, NYSE, AMEX 따로따로 수집
     exchanges = ["XNAS", "XNYS", "XASE"]
 
     for exchange in exchanges:
-        url = "https://api.polygon.io/v3/reference/tickers"
-        params = {
-            "market": "stocks",
-            "exchange": exchange,
-            "active": "true",
-            "limit": 1000,
-            "apiKey": api_key
-        }
-        page = 0
         print(f"  📋 {exchange} 수집 중...")
+        cursor = None
         while True:
             try:
-                r = requests.get(url, params=params, timeout=20)
+                # cursor 방식 페이지네이션
+                params = {
+                    "market": "stocks",
+                    "exchange": exchange,
+                    "active": "true",
+                    "limit": 1000,
+                    "apiKey": api_key
+                }
+                if cursor:
+                    params["cursor"] = cursor
+
+                r = requests.get(
+                    "https://api.polygon.io/v3/reference/tickers",
+                    params=params, timeout=20)
+
+                print(f"    {exchange} 응답: {r.status_code}")
                 if r.status_code != 200:
-                    print(f"  ⚠️ {exchange} 오류: {r.status_code} {r.text[:100]}")
+                    print(f"    오류내용: {r.text[:200]}")
                     break
+
                 data = r.json()
                 results = data.get("results", [])
+                print(f"    결과: {len(results)}개")
+
                 if not results:
                     break
+
                 added = 0
                 for item in results:
-                    sym = item.get("ticker", "")
+                    sym  = item.get("ticker", "")
                     name = item.get("name", "")
-                    # 필터: 알파벳만, 1~5글자, 워런트/유닛/우선주 제외
+                    t    = item.get("type", "")
                     if (sym and sym not in seen
-                        and sym.isalpha() and 1 <= len(sym) <= 5
-                        and "WARRANT" not in name.upper()
-                        and "UNIT" not in name.upper()[:15]
-                        and "RIGHT" not in name.upper()[:15]
-                        and "PREFERRED" not in name.upper()
-                        and item.get("type","") not in ("WARRANT","RIGHT","UNIT")):
-                        all_tickers.append({
-                            "symbol": sym, "name": name,
-                            "type": item.get("type",""),
-                            "exchange": exchange
-                        })
+                            and sym.isalpha()
+                            and 1 <= len(sym) <= 5
+                            and t not in ("WARRANT","RIGHT","UNIT","SP","ETF","ETV","ETN")
+                            and "WARRANT" not in name.upper()
+                            and "PREFERRED" not in name.upper()):
+                        all_tickers.append({"symbol": sym, "name": name})
                         seen.add(sym)
                         added += 1
-                page += 1
-                next_url = data.get("next_url")
+
+                print(f"    필터 후: {added}개 추가 (누적 {len(all_tickers)}개)")
+
+                # next_url에서 cursor 추출
+                next_url = data.get("next_url", "")
                 if not next_url:
-                    print(f"  ✅ {exchange}: {added}개 추가 (총 {len(all_tickers)}개)")
                     break
-                url = next_url
-                params = {"apiKey": api_key}
-                time.sleep(0.3)
+                # cursor 파라미터 추출
+                import urllib.parse as up
+                qs = up.urlparse(next_url).query
+                cursor = dict(up.parse_qsl(qs)).get("cursor", "")
+                if not cursor:
+                    break
+                time.sleep(0.5)
+
             except Exception as e:
-                print(f"  ⚠️ {exchange} 오류: {e}")
+                print(f"    ⚠️ {exchange} 예외: {e}")
                 break
+
+        print(f"  ✅ {exchange} 완료: 누적 {len(all_tickers)}개")
         time.sleep(1)
 
     print(f"✅ 전체 티커 수집 완료: {len(all_tickers)}개")
