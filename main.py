@@ -83,11 +83,11 @@ THEMES = {
         "event": "2021.1 GameStop 한타 — 개인투자자 vs 헤지펀드",
         "color": "#ff2255",
         "symbols": [
-            "GME","AMC","BB","EXPR","CLOV","SNDL","MVIS","ATER","PROG","VINC",
-            "GREE","MULN","FFIE","WKHS","WISH","CRSR","KPLT","MARK","BNED","POAI",
-            "TBLT","GPRO","NOK","MEGL","SPIR","NEGG","BBAI","PHUN","APPH","OPAD",
-            "IRNT","ESSC","KOSS","LGND","SPRT","HOOD","SOFI","RIVN","PLTR","FUBO",
-            "MARA","RIOT","CLSK","COIN","RBLX","DKNG","AFRM","OPEN","LCID","UPST",
+            "GME","AMC","BB","EXPR","CLOV","SNDL","MVIS","ATER","PROG","WKHS",
+            "WISH","CRSR","KPLT","MARK","GPRO","NOK","MULN","FFIE","HOOD","SOFI",
+            "PLTR","FUBO","LCID","RIVN","UPST","AFRM","OPEN","DKNG","SPCE","NKLA",
+            "BBAI","SOUN","HIMS","BYND","GRPN","HTZ","KSS","SPHR","KRUS","PLCE",
+            "SNBR","FLWS","TTEC","SERV","BETR","PCT","RXRX","ENVX","NVTS","OMER",
         ]
     },
     "₿ 암호화폐·블록체인": {
@@ -95,10 +95,9 @@ THEMES = {
         "event": "2021 암호화폐 불장 / 2022 루나·FTX 붕괴",
         "color": "#f7931a",
         "symbols": [
-            "MARA","RIOT","CLSK","BTBT","CIFR","HUT","MIGI","IREN","WGMI","BTDR",
-            "COIN","MSTR","BITF","HIVE","ARBK","BTCS","CORZ","AULT","SATO","EBON",
-            "MGTI","SOS","FTFT","BTCM","DGHI","SLXN","NCTY","PHUN","XNET","CBIT",
-            "DMGI","LTCN","PAYO","HOOD","CIFR","MIGI","IREN","WGMI","BTDR","CORZ",
+            "MARA","RIOT","CLSK","BTBT","CIFR","HUT","MIGI","IREN","COIN","MSTR",
+            "BITF","HIVE","ARBK","BTCS","CORZ","AULT","SOS","EBON","MGTI","FTFT",
+            "WGMI","BTDR","HOOD","PYPL","SQ","SOFI","UPST","AFRM","NVTS","OMER",
         ]
     },
     "⚡ EV·전기차": {
@@ -108,20 +107,19 @@ THEMES = {
         "symbols": [
             "TSLA","RIVN","LCID","NIO","XPEV","LI","FSR","BLNK","CHPT","EVGO",
             "GOEV","NKLA","RIDE","HYLN","SOLO","AYRO","PTRA","HYZN","ZEV","KNDI",
-            "ARVL","MULN","FFIE","IDEX","WKHS","BEEM","CENN","CBAT","CENQ","ELVA",
-            "F","GM","STLA","TM","HMC","RACE","PSNY","ACTC","DCRB","SPNV",
+            "F","GM","STLA","TM","HMC","RACE","PSNY","MULN","FFIE","IDEX",
+            "WKHS","BEEM","CENN","CBAT","EOSE","ENVX","PCT","NFE","SERV","INDI",
         ]
     },
-    "🦠 코로나 특수": {
+    "🦠 코로나·바이오 특수": {
         "desc": "팬데믹 수혜·백신·비대면 폭등 종목",
         "event": "2020~22 코로나19 팬데믹",
         "color": "#00ff9d",
         "symbols": [
-            "MRNA","BNTX","NVAX","OCGN","VXRT","PFE","JNJ","AZN","GSK","SGEN",
-            "TDOC","PTON","ZM","DOCU","NFLX","AMZN","SHOP","CHWY","ETSY","BYND",
-            "DKNG","PENN","PLTR","CRSR","TIGR","FUTU","LGVN","VBIV","SIGA","SRNE",
-            "AGEN","CRTX","INVA","ADXS","IOVA","NKTR","REGN","HOLX","BIO","ILMN",
-            "TMO","DHR","A","MTD","IDXX","WAT","CRL","BIOX","CODX","QGEN",
+            "MRNA","BNTX","NVAX","OCGN","VXRT","PFE","JNJ","AZN","GSK","TDOC",
+            "PTON","ZM","DOCU","NFLX","AMZN","SHOP","CHWY","ETSY","BYND","DKNG",
+            "PENN","CRSR","TIGR","FUTU","SIGA","AGEN","CRTX","INVA","ADXS","IOVA",
+            "NKTR","REGN","HOLX","BIO","ILMN","TMO","DHR","IDXX","WAT","CRL",
         ]
     },
     "🪖 방산·전쟁·지정학": {
@@ -130,9 +128,9 @@ THEMES = {
         "color": "#ff8800",
         "symbols": [
             "LMT","RTX","NOC","GD","BA","HII","KTOS","AXON","CACI","LDOS",
-            "SAIC","KRATOS","AVAV","PLTR","ESLT","TDG","HWM","DRS","BWXT","CW",
-            "HEICO","TXT","MOOG","PKE","SWBI","OLN","POWW","AMMO","VSTO","BYRN",
-            "DFEN","ITA","RKLB","ASTR","ACHR","JOBY","LILM","EVTL","SPCE","BAH",
+            "SAIC","AVAV","PLTR","TDG","HWM","DRS","BWXT","CW","HEICO","TXT",
+            "MOOG","OLN","POWW","AMMO","VSTO","BYRN","RKLB","ASTR","ACHR","BAH",
+            "JOBY","LILM","SPCE","FLIR","ATRO","AIR","NVST","KTOS","AVAV","AXON",
         ]
     },
     "🤖 AI·반도체": {
@@ -142,9 +140,10 @@ THEMES = {
         "symbols": [
             "NVDA","AMD","INTC","QCOM","AVGO","MRVL","MU","AMAT","LRCX","KLAC",
             "SMCI","ASML","AEHR","ONTO","WOLF","AMBA","SWKS","MPWR","ENTG","COHU",
-            "FORM","ACMR","POWI","DIOD","SLAB","INDI","LSCC","ALGM","CEVA","QUIK",
-            "PLTR","AI","BBAI","SOUN","GFAI","AEYE","KULR","MSFT","GOOGL","META",
-            "AMZN","ORCL","CRM","NOW","SNOW","DDOG","PANW","PATH","IONQ","RGTI",
+            "FORM","POWI","DIOD","SLAB","INDI","LSCC","ALGM","CEVA","QUIK","AI",
+            "BBAI","SOUN","GFAI","AEYE","KULR","MSFT","GOOGL","META","ORCL","CRM",
+            "NOW","SNOW","DDOG","PANW","PATH","IONQ","RGTI","PLTR","GTLB","NET",
+            "CRWD","OKTA","ZS","FTNT","CYBR","S","TENB","VRNS","QLYS","RPD",
         ]
     },
     "💊 바이오·헬스케어": {
@@ -153,10 +152,12 @@ THEMES = {
         "color": "#ec4899",
         "symbols": [
             "MRNA","BNTX","NVAX","OCGN","VXRT","AGEN","SAVA","AXSM","ACAD","FATE",
-            "EDIT","NTLA","BEAM","PACB","RXRX","TGTX","INVA","ARQT","VERV","KROS",
-            "ALLO","CRSP","RGEN","IONS","REGN","BIIB","VRTX","ALNY","BMRN","GILD",
-            "ABBV","LLY","NVO","HIMS","TDOC","AMGN","INMD","TNDM","PODD","DXCM",
-            "NVCR","IRTC","SWAV","AGIO","ARDX","ARWR","AVXL","BLFS","BLUE","BNGO",
+            "EDIT","NTLA","BEAM","PACB","RXRX","TGTX","ARQT","VERV","KROS","ALLO",
+            "CRSP","RGEN","IONS","REGN","BIIB","VRTX","ALNY","BMRN","GILD","ABBV",
+            "LLY","NVO","HIMS","TDOC","AMGN","INMD","TNDM","PODD","DXCM","NVCR",
+            "IRTC","SWAV","AGIO","ARDX","ARWR","AVXL","BLFS","BLUE","BNGO","SRPT",
+            "IOVA","ABEO","NVTS","OMER","WGS","CRDF","ACHC","PGY","SPRY","MNPR",
+            "GCTK","FBGL","CYPH","ENVX","PCT","BETR","TTEC","FLWS","SNBR","KRUS",
         ]
     },
     "💳 핀테크·결제": {
@@ -167,7 +168,8 @@ THEMES = {
             "SQ","PYPL","HOOD","SOFI","UPST","AFRM","OPEN","MQ","RELY","DAVE",
             "OPFI","NRDS","STEP","EVRI","TREE","LMND","CURO","ENVA","WRLD","QFIN",
             "CACC","LPRO","PRAA","ECPG","SLM","NAVI","NMIH","ESNT","MGIC","MTG",
-            "RDN","OMF","V","MA","AXP","DFS","COF","SYF","ALLY","METX",
+            "RDN","OMF","DFS","COF","SYF","ALLY","BETR","PGY","V","MA",
+            "AXP","WU","MGI","EVTC","RPAY","PAX","FLYW","PAYS","PRTH","IIIV",
         ]
     },
     "🌐 메타버스·게임": {
@@ -176,9 +178,9 @@ THEMES = {
         "color": "#8b5cf6",
         "symbols": [
             "RBLX","U","META","SNAP","MTCH","EA","TTWO","ATVI","NTES","GME",
-            "MSFT","NVDA","AMD","COIN","SKLZ","PLTK","GLBE","APPS","MGNI","NCTY",
-            "NERD","PERI","PUBM","ZNGA","AESE","BARK","BKSY","CLOV","DKNG","PENN",
-            "GAMB","EVERI","AGS","GDEV","PLAYSTUDIOS","GENRE","DMYD","DKNG","PENN","SKLZ",
+            "MSFT","NVDA","AMD","COIN","SKLZ","PLTK","GLBE","APPS","MGNI","RDDT",
+            "PINS","BMBL","IAC","FUBO","ROKU","SPOT","SIRI","IMAX","CNK","AMC",
+            "DIS","PARA","WBD","NFLX","CMCSA","FOXA","SOUN","BBAI","TTEC","SERV",
         ]
     },
     "☀️ 신재생·수소·원자력": {
@@ -187,10 +189,10 @@ THEMES = {
         "color": "#eab308",
         "symbols": [
             "ENPH","FSLR","SEDG","RUN","NOVA","ARRY","SHLS","STEM","BE","PLUG",
-            "BLDP","FCEL","MAXN","REGI","SPWR","SUNW","AMRC","AES","NEE","CWEN",
-            "BEP","BEPC","CSIQ","DQ","JKS","DAQO","ORA","GPRE","REX","ALTO",
-            "CCJ","DNN","URG","UUUU","EU","LTBR","NXE","PDN","UEC","SMR",
-            "OKLO","NNE","BWXT","LEU","HYZN","HYLN","FCEL","BE","PLUG","BLDP",
+            "BLDP","FCEL","MAXN","REGI","SPWR","SUNW","AES","NEE","CWEN","BEP",
+            "BEPC","CSIQ","DQ","JKS","DAQO","ORA","CCJ","DNN","URG","UUUU",
+            "EU","LTBR","NXE","PDN","UEC","SMR","OKLO","NNE","BWXT","LEU",
+            "EOSE","ENVX","PCT","NFE","FLNC","HYZN","HYLN","ACHR","JOBY","LILM",
         ]
     },
     "🛢️ 에너지·원자재": {
@@ -202,6 +204,7 @@ THEMES = {
             "DVN","FANG","APA","MRO","SLB","HAL","BKR","NOV","OII","RIG",
             "PBF","DKL","FCX","NEM","GOLD","AEM","WPM","AG","PAAS","CDE",
             "HL","MP","AA","KALU","CMC","STLD","NUE","CLF","X","TREX",
+            "CRML","NFE","EOSE","SMR","OKLO","NNE","BWXT","LEU","CCJ","DNN",
         ]
     },
     "📱 소셜·스트리밍·이커머스": {
@@ -210,9 +213,10 @@ THEMES = {
         "color": "#06b6d4",
         "symbols": [
             "META","SNAP","PINS","RDDT","BMBL","MTCH","IAC","ABNB","EXPE","BKNG",
-            "LYFT","UBER","DASH","CART","ETSY","SHOP","MELI","AMZN","W","CHWY",
-            "OSTK","NFLX","PARA","WBD","FUBO","ROKU","SPOT","SIRI","IMAX","CNK",
-            "AMC","DIS","CMCSA","FOXA","TWLO","DDOG","NET","CRWD","OKTA","S",
+            "LYFT","UBER","DASH","ETSY","SHOP","MELI","AMZN","W","CHWY","NFLX",
+            "PARA","WBD","FUBO","ROKU","SPOT","SIRI","IMAX","CNK","AMC","DIS",
+            "GRPN","KSS","PLCE","FLWS","SNBR","KRUS","HTZ","SPHR","SERV","TTEC",
+            "CMCSA","FOXA","TWLO","DDOG","NET","CRWD","OKTA","GTLB","ESTC","MDB",
         ]
     },
     "⚕️ 의료기기·디지털헬스": {
@@ -222,31 +226,51 @@ THEMES = {
         "symbols": [
             "DXCM","INMD","TNDM","PODD","STE","HOLX","NVCR","IRTC","SWAV","ISRG",
             "MDT","EW","BSX","ZBH","SYK","ALGN","MTSC","NTRA","EXAS","ILMN",
-            "PACB","NVTA","ONEM","ACCD","AMWL","HIMS","TALK","TDOC","PHR","DOCS",
-            "WELL","GH","PRGO","TELA","ATRC","NVCR","IRTC","SWAV","INMD","TNDM",
+            "PACB","NVTA","ACCD","AMWL","HIMS","TALK","TDOC","PHR","DOCS","WELL",
+            "GH","PRGO","TELA","ATRC","ONEM","LFST","CERT","IOVA","SPRY","GCTK",
+            "WGS","ACHC","CRDF","MNPR","FBGL","ABEO","CYPH","SRPT","RXRX","BEAM",
         ]
     },
     "📅 역사적 이벤트": {
         "desc": "주요 사건마다 폭등한 종목 — 패턴 분석용",
-        "event": "GME한타(21) → 코로나(20) → 러우전쟁(22) → FTX(22) → SVB(23) → AI붐(23) → GLP-1(23~)",
+        "event": "GME한타(21)→코로나(20)→러우전쟁(22)→FTX(22)→SVB(23)→AI붐(23)→GLP-1(23~)",
         "color": "#f43f5e",
         "symbols": [
-            # GME 한타 2021.1
-            "GME","AMC","BB","NOK","EXPR","CLOV","KOSS","LGND","SNDL","MVIS",
-            # 코로나 수혜 2020
+            "GME","AMC","BB","NOK","EXPR","CLOV","KOSS","SNDL","MVIS","WKHS",
             "MRNA","BNTX","ZM","PTON","NFLX","AMZN","SHOP","DOCU","TDOC","CHWY",
-            # 러-우 전쟁 방산/에너지 2022
-            "LMT","RTX","NOC","GD","KTOS","AVAV","KRATOS","OXY","XOM","CVX",
-            # FTX 붕괴 암호화폐 2022
-            "COIN","MARA","RIOT","CLSK","BTBT","MSTR","HOOD","BTDR","CIFR","HUT",
-            # SVB 은행 파산 2023
-            "WAL","PACW","ZION","CMA","KEY","RF","USB","FRC","ALLY","EWBC",
-            # AI 붐 2023~
-            "NVDA","AMD","SMCI","PLTR","AI","SOUN","BBAI","IONQ","ARQQ","AEYE",
-            # 비만치료제 GLP-1 2023~
-            "NVO","LLY","HIMS","AMGN","PFE","GILD","REGN","VKTX","RYTM","ALTM",
-            # 관세/무역전쟁 수혜
-            "STLD","NUE","CLF","X","CMC","CENX","KALU","AA","TREX","ZEUS",
+            "LMT","RTX","NOC","GD","KTOS","AVAV","OXY","XOM","CVX","HES",
+            "COIN","MARA","RIOT","CLSK","BTBT","MSTR","HOOD","CIFR","HUT","BITF",
+            "WAL","PACW","ZION","CMA","KEY","RF","USB","ALLY","EWBC","UMBF",
+            "NVDA","AMD","SMCI","PLTR","AI","SOUN","BBAI","IONQ","AEYE","KULR",
+            "NVO","LLY","HIMS","AMGN","PFE","GILD","REGN","VKTX","RYTM","ACAD",
+            "STLD","NUE","CLF","X","CMC","AA","KALU","TREX","FCX","NEM",
+        ]
+    },
+    "💥 페니스탁·급등후보": {
+        "desc": "저가 소형주 — 공매도 높고 플로트 작아 급등 폭발 가능성",
+        "event": "소형주 숏 스퀴즈 — 플로트 小 + 공매도 高 = 폭발적 급등",
+        "color": "#ff4444",
+        "symbols": [
+            # 공매도 상위 소형주 (highshortinterest.com 확인)
+            "GRPN","HTZ","CRML","LFVN","BETR","SPRY","PCT","TTEC","GCTK",
+            "FBGL","PLCE","SNBR","JCSE","KRUS","MNPR","CRDF","ACHC","PGY",
+            "NVTS","OMER","WGS","INOD","FLNC","NFE","BYND","SPHR","SERV",
+            # 바이오 페니 (FDA 기대 급등 이력)
+            "BNGO","OCGN","VXRT","SIGA","ADXS","AGEN","CRTX","INVA","AVXL",
+            "BLFS","BLUE","ABEO","CYPH","MNPR","FOLD","SAGE","PRLD","RCUS",
+            "VKTX","RYTM","RXRX","ARQT","VERV","KROS","AGIO","ARDX","SPRY",
+            # EV/에너지 페니
+            "SOLO","AYRO","HYZN","ZEV","KNDI","IDEX","WKHS","BEEM","CENN",
+            "CBAT","EOSE","ENVX","BLNK","GOEV","RIDE","HYLN","PTRA","NKLA",
+            # 암호화폐 관련 소형
+            "BTBT","CIFR","MIGI","IREN","WGMI","BTDR","ARBK","BTCS","CORZ",
+            "AULT","SOS","EBON","MGTI","FTFT","HUT","BITF","HIVE","CLSK",
+            # AI/기술 소형
+            "BBAI","GFAI","AEYE","KULR","IONQ","RGTI","SOUN","SERV","TTEC",
+            "BETR","PCT","CRML","SPRY","FBGL","GCTK","JCSE","MNPR","CYPH",
+            # 밈 관련 소형
+            "MULN","FFIE","EXPR","CLOV","SNDL","MVIS","ATER","PROG","WKHS",
+            "WISH","KPLT","MARK","GPRO","BBAI","SPCE","NKLA","RIDE","GOEV",
         ]
     },
     "🏦 S&P500 핵심": {
@@ -254,20 +278,41 @@ THEMES = {
         "event": "미국 대표 지수 — 공매도 적지만 스퀴즈 전제 조건 모니터링",
         "color": "#64748b",
         "symbols": [
-            "AAPL","MSFT","GOOGL","AMZN","NVDA","META","TSLA","JPM","JNJ","V",
-            "PG","UNH","MA","HD","CVX","MRK","ABBV","PFE","KO","PEP",
-            "AVGO","TMO","COST","WMT","DIS","CSCO","ACN","ABT","MCD","NEE",
-            "LIN","DHR","VZ","ADBE","TXN","NKE","PM","RTX","T","ORCL",
-            "QCOM","UPS","AMGN","LOW","INTC","HON","IBM","GE","CAT","MMM",
-            "AXP","BA","GS","MS","C","WFC","BAC","BK","USB","LMT",
-            "NOC","GD","HII","UNH","CVS","HCA","CI","HUM","MOH","CNC",
-        ]
-    },
+            "MSFT","AAPL","NVDA","GOOGL","AMZN","META","TSLA","LLY","AVGO","JPM",
+            "V","XOM","WMT","UNH","MA","PG","JNJ","COST","HD","NFLX",
+            "BAC","ABBV","KO","MRK","CVX","PLTR","ORCL","PEP","TMO","ACN",
+            "PM","CSCO","WFC","CRM","ABT","GE","AMD","ISRG","IBM","RTX",
+            "TJX","GS","SPGI","C","AXP","DHR","MCD","NEE","DIS","CMCSA",
+            "CAT","VZ","INTU","UBER","NOW","ETN","LOW","BSX","BX","BKNG",
+            "SCHW","BLK","PNC","T","BA","DE","UNP","REGN","CB","AMAT",
+            "SYK","TGT","VRTX","PANW","ADI","LRCX","MDT","NKE","HCA","MMC",
+            "MU","KLAC","PLD","ICE","GILD","SHW","USB","MSI","TDG","FI",
+            "HLT","WELL","AMT","EOG","MPC","CI","CME","DUK","NOC","ECL",
+            "ITW","EMR","COP","AIG","GD","AON","PSA","MCO","SO","WM",
+            "APH","FCX","TT","OKE","PCAR","CTAS","CEG","NSC","CARR","ROK",
+            "AEP","ADSK","SPG","FICO","FAST","CTSH","SRE","PCG","PRU","ROP",
+            "MCK","AMP","AFL","LMT","JCI","VRSK","IDXX","GWW","CDNS","TROW",
+            "MTD","MPWR","EW","OTIS","EA","CBOE","GLW","WAB","PPG","ED",
+            "XYL","IR","EFX","HPE","IRM","LHX","CDW","FSLR","DLTR","WST",
+            "VMC","TER","ANSS","BALL","SYY","STT","MAA","CPT","FDS","IEX",
+        "POOL","PAYC","BRO","MKC","PKG","IP","CINF","HIG","SNA","WHR",
+        "HAS","TPR","PVH","RL","SBUX","YUM","CMG","DPZ","MCD","DRI",
+        "TXRH","BBY","ROST","DG","FIVE","AZO","ORLY","AAP","KMX","AN",
+        "TMUS","CHTR","DISH","LUMN","FOXA","NWSA","OMC","IPG","PHM","DHI",
+        "LEN","TOL","NVR","MDC","LGIH","TMHC","KBH","MHO","SKY","CVCO",
+        "RF","HBAN","FITB","MTB","RJF","AJG","L","CFG","NTRS","BK",
+        "TROW","IVZ","AMG","BEN","VCTR","WETF","SEIC","NDAQ","MCO","MSCI",
+        "SPGI","ICE","CME","CBOE","FDS","MKTX","TW","VRSK","BR","WEX",
+        "FIS","FISV","GPN","WU","MGI","EVTC","RPAY","FLYW","PAYS","PRTH",
+        "CRWD","OKTA","ZS","FTNT","CYBR","S","TENB","VRNS","QLYS","RPD",
+        "GTLB","MDB","ESTC","DDOG","SNOW","NOW","HUBS","INTU","ADSK","CRM",
+    ]
+},
 }
 
 # Fix 5: 상장폐지/거래중지 제외
-DELISTED = {"BBBY","SIVB","FRC","SI","SBNY","CODA","SPRT","NAKD","TRCH","SHIP",
-            "CTRM","SQQQ","TQQQ","SPXS","UVXY"}
+DELISTED = {
+            "UVXY"}
 ALL_SYMBOLS = list(dict.fromkeys([
     s for t in THEMES.values() for s in t["symbols"] if s not in DELISTED
 ]))
@@ -326,6 +371,17 @@ def sqs(m:dict)->dict:
 
     gam = clamp(m.get("gamma_conc",0),0,1)*8
 
+    # 매집 신호: 거래량 급등인데 주가 변동 작음 (세력 매집)
+    # vol_spike 높고 price_change 낮으면 = 누군가 조용히 사모으는 중
+    vs = m.get("vol_spike", 1)
+    pc = abs(m.get("change_pct", 0))
+    if vs >= 3 and pc <= 3:
+        acc = clamp((vs - 3) / 7, 0, 1) * 6  # 최대 6점
+    elif vs >= 2 and pc <= 2:
+        acc = clamp((vs - 2) / 8, 0, 1) * 3
+    else:
+        acc = 0.0
+
     # Fix 3: 소셜 속도 로그 스케일
     sv = m.get("social_velocity",0)
     if   sv <= 0:   soc = 0.0
@@ -335,7 +391,7 @@ def sqs(m:dict)->dict:
     sen = max(0,m.get("sentiment",0))*4
     cat = 4.0 if m.get("has_catalyst",False) else 0.0
 
-    raw  = si+dtc+ctb+util+flt+rot+spk+dist+rsi+gam+soc+sen+cat
+    raw  = si+dtc+ctb+util+flt+rot+spk+dist+rsi+gam+soc+sen+cat+acc
     pen  = (10 if m.get("market_cap",1e9)<50e6 else 0)+(15 if m.get("has_dilution",False) else 0)
     final= round(clamp(raw-pen,0,100),1)
 
@@ -344,7 +400,8 @@ def sqs(m:dict)->dict:
         "util_score":round(util,2),"float_score":round(flt,2),"rotation_score":round(rot,2),
         "vol_spike_score":round(spk,2),"dist_52w_score":round(dist,2),"rsi_score":round(rsi,2),
         "gamma_score":round(gam,2),"social_score":round(soc,2),"sentiment_score":round(sen,2),
-        "catalyst_score":round(cat,2),"penalty":round(pen,2),"raw_total":round(raw,2),
+        "catalyst_score":round(cat,2),"accumulation_score":round(acc,2),
+        "penalty":round(pen,2),"raw_total":round(raw,2),
     }}
 
 # ════════════════════════════════════════════════════════════════
@@ -409,7 +466,7 @@ def fetch_social()->dict:
                 vel=((m-p)/p)*100
                 sent=float(item.get("sentiment",0) or 0)
                 out[sym]={"social_velocity":round(vel,1),"sentiment":round(clamp(sent,-1,1),4),
-                          "mentions":m,"src":"apewisdom"}
+                          "mentions":int(m) if m else 0,"src":"apewisdom"}
             if pg>=data.get("page_count",1): break
             time.sleep(1)
         _SOCIAL.clear(); _SOCIAL.update(out)
@@ -483,38 +540,196 @@ def calc_rsi(closes)->float:
 # ════════════════════════════════════════════════════════════════
 # 메인 데이터 로더
 # ════════════════════════════════════════════════════════════════
-def fetch_polygon_snapshots(syms:list, api_key:str)->dict:
-    """Polygon prev-day close — $29 Starter 플랜 호환"""
+def fetch_polygon_short_interest(syms: list, api_key: str) -> dict:
+    """Polygon Short Interest API — SI%/DTC 실제 데이터 (2025.6 추가)"""
     if not HAS_REQ or not api_key: return {}
-    out={}
+    out = {}
+    # 최근 보고일 (FINRA 격주 발표 기준)
+    from datetime import date, timedelta
+    end = date.today().strftime("%Y-%m-%d")
+    start = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
     for sym in syms:
         try:
-            # prev close (Starter 플랜 호환)
-            r=requests.get(
-                f"https://api.polygon.io/v2/aggs/ticker/{sym}/prev",
-                params={"adjusted":"true","apiKey":api_key},timeout=8)
-            if r.status_code!=200: continue
-            results=r.json().get("results",[])
+            r = requests.get(
+                f"https://api.polygon.io/v3/short/interest/{sym}",
+                params={"date_gte": start, "date_lte": end,
+                        "limit": 1, "apiKey": api_key},
+                timeout=8)
+            if r.status_code != 200: continue
+            results = r.json().get("results", [])
             if not results: continue
-            res=results[0]
-            price=float(res.get("c",0))
-            if price<=0: continue
-            prev_o=float(res.get("o",price))
-            out[sym]={"price":round(price,2),"volume":int(res.get("v",0)),
-                "change_pct":round((price-prev_o)/max(prev_o,0.01)*100,2),
-                "high":float(res.get("h",price)),"low":float(res.get("l",price))}
-            time.sleep(0.05)
+            res = results[0]
+            short_shares = int(res.get("short_interest", 0) or 0)
+            float_sh = int(res.get("shares_outstanding", 0) or 0)
+            avg_vol = float(res.get("average_daily_volume", 1) or 1)
+            si_pct = round(short_shares / max(float_sh, 1) * 100, 2) if float_sh > 0 else 0
+            dtc = round(short_shares / max(avg_vol, 1), 2) if avg_vol > 0 else 0
+            if si_pct > 0:
+                out[sym] = {"si_pct": si_pct, "dtc": dtc,
+                           "si_shares": short_shares, "float_shares": float_sh}
+            time.sleep(0.1)
         except: pass
-    print(f"  📡 Polygon prev-close: {len(out)}개/{len(syms)}")
+    print(f"  📊 Short Interest: {len(out)}개/{len(syms)}")
     return out
 
-def fetch_polygon_aggs(sym:str, api_key:str)->dict:
-    """90일 OHLCV → RSI/52주고저/거래량평균"""
+def fetch_polygon_short_volume_batch(syms: list, api_key: str) -> dict:
+    """Polygon Short Volume API — 단기 공매도 거래량 비율"""
     if not HAS_REQ or not api_key: return {}
+    out = {}
+    from datetime import date, timedelta
+    # 최근 거래일
+    target = date.today()
+    for _ in range(5):
+        if target.weekday() < 5: break
+        target -= timedelta(days=1)
+    date_str = target.strftime("%Y-%m-%d")
+    for sym in syms[:200]:  # rate limit 고려 상위 200개만
+        try:
+            r = requests.get(
+                f"https://api.polygon.io/v3/short/volume/{sym}",
+                params={"date": date_str, "apiKey": api_key},
+                timeout=8)
+            if r.status_code != 200: continue
+            results = r.json().get("results", [])
+            if not results: continue
+            res = results[0]
+            sv_ratio = float(res.get("short_volume_ratio", 0) or 0)
+            if sv_ratio > 0:
+                out[sym] = {"short_vol_ratio": round(sv_ratio, 4)}
+            time.sleep(0.08)
+        except: pass
+    print(f"  📊 Short Volume: {len(out)}개")
+    return out
+
+
+def fetch_all_tickers(api_key: str) -> list:
+    """Polygon API로 전체 미국 상장 종목 자동 수집"""
+    if not HAS_REQ or not api_key:
+        return []
+    all_tickers = []
+    url = "https://api.polygon.io/v3/reference/tickers"
+    params = {
+        "market": "stocks",
+        "exchange": "XNAS,XNYS,XASE",  # NASDAQ + NYSE + AMEX
+        "active": "true",
+        "limit": 1000,
+        "apiKey": api_key
+    }
+    page = 0
+    while True:
+        try:
+            r = requests.get(url, params=params, timeout=20)
+            if r.status_code != 200:
+                print(f"  ⚠️ 티커목록 오류: {r.status_code}")
+                break
+            data = r.json()
+            results = data.get("results", [])
+            if not results:
+                break
+            for item in results:
+                sym = item.get("ticker", "")
+                name = item.get("name", "")
+                # 필터: 알파벳만, 1~6글자, 워런트/유닛 제외
+                if (sym and sym.isalpha() and 1 <= len(sym) <= 5
+                    and "WARRANT" not in name.upper()
+                    and "UNIT" not in name.upper()[:10]
+                    and "RIGHT" not in name.upper()[:10]
+                    and "PREFERRED" not in name.upper()):
+                    all_tickers.append({"symbol": sym, "name": name,
+                        "type": item.get("type",""), "exchange": item.get("primary_exchange","")})
+            page += 1
+            print(f"  📋 티커목록 {page}페이지: 누적 {len(all_tickers)}개")
+            # next_url로 페이지네이션
+            next_url = data.get("next_url")
+            if not next_url:
+                break
+            url = next_url + f"&apiKey={api_key}"
+            params = {}  # next_url에 파라미터 포함됨
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"  ⚠️ 티커목록 오류: {e}")
+            break
+    print(f"✅ 전체 티커 수집: {len(all_tickers)}개")
+    return all_tickers
+
+
+def fetch_polygon_snapshots(syms:list, api_key:str)->dict:
+    """Polygon grouped daily — $29 Starter 플랜 호환 (배치 조회)"""
+    if not HAS_REQ or not api_key: return {}
+    from datetime import date, timedelta
+    out={}
+    # 최근 거래일 찾기 (주말 제외)
+    target = date.today()
+    for _ in range(5):
+        if target.weekday() < 5:
+            break
+        target -= timedelta(days=1)
+    date_str = target.strftime("%Y-%m-%d")
+    try:
+        # grouped daily — 하루 전체 미국 주식 한번에
+        r = requests.get(
+            f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{date_str}",
+            params={"adjusted":"true","apiKey":api_key},timeout=30)
+        if r.status_code == 200:
+            results = r.json().get("results",[])
+            sym_set = set(syms)
+            for res in results:
+                sym = res.get("T","")
+                if sym not in sym_set: continue
+                price = float(res.get("c",0))
+                if price <= 0: continue
+                prev_o = float(res.get("o",price))
+                out[sym]={"price":round(price,2),"volume":int(res.get("v",0) or 0),
+                    "change_pct":round((price-prev_o)/max(prev_o,0.01)*100,2),
+                    "high":float(res.get("h",price)),"low":float(res.get("l",price))}
+            print(f"  📡 Polygon grouped {date_str}: {len(out)}개")
+        else:
+            print(f"  ⚠️ Polygon grouped {r.status_code}: {r.text[:100]}")
+            # fallback: 종목별 prev
+            for sym in syms[:50]:  # 50개만
+                try:
+                    r2=requests.get(f"https://api.polygon.io/v2/aggs/ticker/{sym}/prev",
+                        params={"adjusted":"true","apiKey":api_key},timeout=8)
+                    if r2.status_code!=200: continue
+                    res=r2.json().get("results",[])
+                    if not res: continue
+                    # 날짜 체크 — 30일 이내 데이터만 사용
+                    t_ms = res[0].get("t", 0)
+                    from datetime import date, timedelta
+                    cutoff = (date.today() - timedelta(days=30)).toordinal()
+                    if t_ms:
+                        import datetime
+                        data_date = datetime.datetime.fromtimestamp(t_ms/1000).date()
+                        if data_date < date.today() - timedelta(days=30):
+                            continue  # 너무 오래된 데이터 skip
+                    price=float(res[0].get("c",0))
+                    if price<=0: continue
+                    out[sym]={"price":round(price,2),"volume":int(res[0].get("v",0) or 0),
+                        "change_pct":0.0,"high":float(res[0].get("h",price)),"low":float(res[0].get("l",price))}
+                    time.sleep(0.1)
+                except: pass
+            print(f"  📡 Polygon fallback: {len(out)}개")
+    except Exception as e:
+        print(f"  ⚠️ Polygon 오류: {e}")
+    return out
+
+_AGGS_CACHE: dict = {}  # 캐시 (1시간 유효)
+
+def fetch_polygon_aggs(sym:str, api_key:str)->dict:
+    """90일 OHLCV → RSI/52주고저/거래량평균 (캐시 적용)"""
+    if not HAS_REQ or not api_key: return {}
+    # 1시간 캐시
+    cached = _AGGS_CACHE.get(sym)
+    if cached and time.time() - cached.get("_ts",0) < 3600:
+        return cached
     try:
         from datetime import date,timedelta
-        end=date.today().strftime("%Y-%m-%d")
-        start=(date.today()-timedelta(days=90)).strftime("%Y-%m-%d")
+        end_dt = date.today()
+        for _ in range(5):
+            if end_dt.weekday() < 5: break
+            end_dt -= timedelta(days=1)
+        end = end_dt.strftime("%Y-%m-%d")
+        start = (end_dt - timedelta(days=90)).strftime("%Y-%m-%d")
         r=requests.get(f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day/{start}/{end}",
             params={"adjusted":"true","sort":"asc","limit":90,"apiKey":api_key},timeout=10)
         if r.status_code!=200: return {}
@@ -531,9 +746,11 @@ def fetch_polygon_aggs(sym:str, api_key:str)->dict:
         else:
             rsi_v=50.0; avg_vol=float(sum(vols[-20:])/max(len(vols[-20:]),1))
         h52=max(highs); l52=min(lows); cur=closes[-1]
-        return {"rsi14":rsi_v,"avg_vol":avg_vol,"high_52w":round(h52,2),
+        result = {"rsi14":rsi_v,"avg_vol":avg_vol,"high_52w":round(h52,2),
                 "low_52w":round(l52,2),"dist_52w":round((h52-cur)/max(h52,1),3),
-                "vol_spike":round(vols[-1]/max(avg_vol,1),3)}
+                "vol_spike":round(vols[-1]/max(avg_vol,1),3),"_ts":time.time()}
+        _AGGS_CACHE[sym] = result
+        return result
     except: return {}
 
 def fetch_polygon_details(sym:str, api_key:str)->dict:
@@ -550,95 +767,170 @@ def fetch_polygon_details(sym:str, api_key:str)->dict:
     except: return {}
 
 def load_real(syms:list)->dict:
-    """Polygon/Massive API로 실제 주가 데이터 로드"""
+    """Polygon API로 전체 미국 상장 종목 자동 수집 + 가격 데이터 로드"""
     POLY_KEY=os.environ.get("POLYGON_API_KEY","")
     if not POLY_KEY:
-        print("⚠️ POLYGON_API_KEY 없음 → 데모 데이터 사용")
+        print("⚠️ POLYGON_API_KEY 없음 → 데이터 없음")
         return {}
     if not HAS_REQ: return {}
     out={}
-    print("📱 소셜 데이터..."); social=fetch_social()
-    print(f"📡 Polygon 스냅샷 ({len(syms)}개)...")
-    snaps=fetch_polygon_snapshots(syms,POLY_KEY)
-    print(f"✅ 스냅샷 {len(snaps)}개")
-    for sym in syms:
-        snap=snaps.get(sym)
-        if not snap: continue
+
+    # 1단계: 전체 티커 자동 수집 (하드코딩 불필요!)
+    print("📋 Polygon에서 전체 상장 종목 수집 중...")
+    all_ticker_info = fetch_all_tickers(POLY_KEY)
+    dynamic_syms = [t["symbol"] for t in all_ticker_info]
+    ticker_names = {t["symbol"]: t["name"] for t in all_ticker_info}
+    print(f"✅ 수집된 티커: {len(dynamic_syms)}개")
+
+    # 2단계: 소셜 데이터
+    print("📱 소셜 데이터...")
+    social = fetch_social()
+
+    # 3단계: 전체 가격 스냅샷 (grouped daily - 한방에)
+    print(f"📡 Polygon grouped daily 가격 수집...")
+    snaps = fetch_polygon_snapshots(dynamic_syms, POLY_KEY)
+    print(f"✅ 가격 데이터: {len(snaps)}개")
+
+    # 4단계: 종목별 상세 데이터
+    print("📊 상세 데이터 로딩...")
+    processed = 0
+    for sym, snap in snaps.items():
         try:
-            price=snap["price"]; vol=snap["volume"]
-            agg=fetch_polygon_aggs(sym,POLY_KEY)
-            rsi_v=agg.get("rsi14",50.0)
-            avg_vol=agg.get("avg_vol",max(vol,1))
-            h52=agg.get("high_52w",price); l52=agg.get("low_52w",price)
-            dist_52=agg.get("dist_52w",0.5); vol_spk=agg.get("vol_spike",1.0)
-            details=fetch_polygon_details(sym,POLY_KEY)
-            name=details.get("name",sym)
-            mcap=details.get("market_cap",0)
-            float_sh=details.get("float_shares",0)
-            sec_kr=SECTOR_KR.get(details.get("sector",""),"기타")
-            sd=social.get(sym,{})
-            ctb_e,util_e=estimate_ctb(0,0)
-            out[sym]={"symbol":sym,"name":name,"sector":sec_kr,
-                "theme":SYM_THEME.get(sym,"기타"),
-                "market_cap":mcap,"has_dilution":False,
-                "price":round(price,2),"volume":vol,
-                "vol_spike":vol_spk,"dist_52w":dist_52,
-                "high_52w":h52,"low_52w":l52,"rsi14":rsi_v,
-                "si_pct":0.0,"si_shares":0,"dtc":0.0,
-                "float_shares":float_sh,
-                "rotation":round(vol/max(float_sh,1),5) if float_sh>0 else 0,
-                "ctb":ctb_e,"util":util_e,"ctb_src":"estimated",
-                "gamma_conc":0.0,
-                "social_velocity":float(sd.get("social_velocity",0)),
-                "sentiment":float(sd.get("sentiment",random.uniform(-0.2,0.5))),
-                "mentions":int(sd.get("mentions",0)),
-                "soc_src":sd.get("src","demo"),
-                "has_catalyst":False,"change_pct":snap.get("change_pct",0)}
-            print(f"  ✅ {sym}: ${price:.2f} RSI:{rsi_v:.0f}")
-            time.sleep(0.12)
-        except Exception as e: print(f"  ⚠️ {sym}: {e}")
-    print(f"✅ Polygon 완료: {len(out)}개")
+            price = snap["price"]
+            vol   = snap["volume"]
+
+            # 필터: 가격 $0.05 이상, 거래량 5만 이상
+            if price < 0.05 or vol < 50000:
+                continue
+
+            agg = fetch_polygon_aggs(sym, POLY_KEY)
+            rsi_v   = agg.get("rsi14", 50.0)
+            avg_vol = agg.get("avg_vol", max(vol, 1))
+            h52     = agg.get("high_52w", price)
+            l52     = agg.get("low_52w",  price)
+            dist_52 = agg.get("dist_52w", 0.5)
+            vol_spk = agg.get("vol_spike", 1.0)
+
+            # 거래량 너무 적으면 skip
+            if avg_vol < 50000:
+                continue
+
+            # 이름 (티커 수집 때 받아온 것 사용)
+            name = ticker_names.get(sym, sym)
+
+            # 시총/플로트는 details API (rate limit 때문에 샘플만)
+            mcap = float_sh = 0
+            if processed % 10 == 0:  # 10개마다 1번만 상세 조회
+                details = fetch_polygon_details(sym, POLY_KEY)
+                mcap     = details.get("market_cap", 0)
+                float_sh = details.get("float_shares", 0)
+
+            sd = social.get(sym, {})
+            ctb_e, util_e = estimate_ctb(0, 0)
+
+            # 테마 자동 분류
+            theme = SYM_THEME.get(sym, auto_classify_theme(sym, name, price))
+
+            out[sym] = {
+                "symbol": sym, "name": name, "sector": "기타",
+                "theme": theme,
+                "market_cap": mcap, "has_dilution": False,
+                "price": round(price, 2), "volume": vol,
+                "vol_spike": vol_spk, "dist_52w": dist_52,
+                "high_52w": h52, "low_52w": l52, "rsi14": rsi_v,
+                "si_pct": 0.0, "si_shares": 0, "dtc": 0.0,
+                "float_shares": float_sh,
+                "rotation": round(vol/max(float_sh,1),5) if float_sh>0 else 0,
+                "ctb": ctb_e, "util": util_e, "ctb_src": "estimated",
+                "gamma_conc": 0.0,
+                "social_velocity": float(sd.get("social_velocity", 0)),
+                "sentiment": float(sd.get("sentiment", 0)),
+                "mentions": int(sd.get("mentions", 0)),
+                "soc_src": sd.get("src", "demo"),
+                "has_catalyst": False,
+                "change_pct": snap.get("change_pct", 0),
+            }
+            processed += 1
+            if processed % 500 == 0:
+                print(f"  ✅ {processed}개 처리 중...")
+            time.sleep(0.05)
+        except Exception as e:
+            pass
+
+    print(f"✅ Polygon 완료: {len(out)}개 실제 종목")
     return out
 
-def enrich(syms:list,state:dict):
-    print(f"💹 보강 ({len(syms)}개)...")
+
+def auto_classify_theme(sym: str, name: str, price: float) -> str:
+    """종목명/심볼로 테마 자동 분류"""
+    name_up = name.upper()
+    # 암호화폐/블록체인
+    if any(k in name_up for k in ["BITCOIN","CRYPTO","BLOCKCHAIN","MINING","MINER","DIGITAL ASSET"]):
+        return "₿ 암호화폐·블록체인"
+    # EV
+    if any(k in name_up for k in ["ELECTRIC VEHICLE","EV ","CHARGING","AUTONOMOUS","BATTERY"]):
+        return "⚡ EV·전기차"
+    # AI/반도체
+    if any(k in name_up for k in ["ARTIFICIAL INTELLIGENCE","SEMICONDUCTOR","AI ","CHIP","QUANTUM"]):
+        return "🤖 AI·반도체"
+    # 바이오
+    if any(k in name_up for k in ["THERAPEUTICS","BIOSCIENCE","PHARMA","BIOTECH","GENE","ONCOLOGY","GENOMIC"]):
+        return "💊 바이오·헬스케어"
+    # 방산
+    if any(k in name_up for k in ["DEFENSE","AEROSPACE","MILITARY","DRONE","WEAPON"]):
+        return "🪖 방산·전쟁·지정학"
+    # 신재생
+    if any(k in name_up for k in ["SOLAR","WIND","HYDROGEN","NUCLEAR","RENEWABLE","CLEAN ENERGY"]):
+        return "☀️ 신재생·수소·원자력"
+    # 페니스탁
+    if price <= 5:
+        return "💥 페니스탁·급등후보"
+    return "🏦 S&P500 핵심"
+
+def enrich(syms:list, state:dict):
+    """Polygon API만 사용 — iborrowdesk/yfinance/Yahoo RSS 제거"""
+    POLY_KEY = os.environ.get("POLYGON_API_KEY","")
+    if not POLY_KEY or not syms: return
+    print(f"💹 Short Interest 보강 ({len(syms)}개)...")
+
+    # Short Interest API로 SI%/DTC 실제 데이터
+    si_data = fetch_polygon_short_interest(syms, POLY_KEY)
+
+    # Short Volume으로 단기 공매도 비율
+    sv_data = fetch_polygon_short_volume_batch(syms, POLY_KEY)
+
     for sym in syms:
         if sym not in state: continue
-        d=state[sym]
-        b=fetch_borrow(sym)
-        if b.get("ctb",0)>0:
-            d["ctb"]=b["ctb"]; d["util"]=b["util"]; d["ctb_src"]="iborrowdesk"
-        d["gamma_conc"]=fetch_gamma(sym,d.get("price",0))
-        d["has_catalyst"]=fetch_news(sym)
-        r=sqs(d); d.update(r)
-        time.sleep(0.3)
-    print("✅ 보강 완료")
+        d = state[sym]
 
-def demo_stock(sym:str)->dict:
-    p=round(random.uniform(1,300),2)
-    si=round(random.uniform(3,40),2)
-    dtc=round(random.uniform(0.5,10),2)
-    ctb,util=estimate_ctb(si,dtc)
-    return {
-        "symbol":sym,"name":sym,"sector":"기타","theme":SYM_THEME.get(sym,"기타"),
-        "market_cap":random.uniform(5e7,5e9),"has_dilution":random.random()<0.12,
-        "price":p,"volume":random.randint(200_000,20_000_000),
-        "vol_spike":round(random.uniform(0.5,4),2),
-        "dist_52w":round(random.uniform(0,0.8),3),
-        "high_52w":round(p*random.uniform(1.1,2.2),2),
-        "low_52w":round(p*random.uniform(0.3,0.95),2),
-        "rsi14":round(random.uniform(25,75),1),
-        "si_pct":si,"si_shares":0,"dtc":dtc,
-        "float_shares":random.randint(5_000_000,400_000_000),
-        "rotation":round(random.uniform(0,2.5),4),
-        "ctb":ctb,"util":util,"ctb_src":"demo",
-        "gamma_conc":round(random.uniform(0,0.85),3),
-        "social_velocity":round(random.uniform(0,400),1),
-        "sentiment":round(random.uniform(-0.4,0.9),3),
-        "mentions":random.randint(0,500),"soc_src":"demo",
-        "has_catalyst":random.random()<0.18,
-        "change_pct":round(random.uniform(-10,10),2),
-    }
+        # SI% / DTC 실제 데이터 적용
+        if sym in si_data:
+            sd = si_data[sym]
+            d["si_pct"]     = sd["si_pct"]
+            d["dtc"]        = sd["dtc"]
+            d["si_shares"]  = sd["si_shares"]
+            d["float_shares"]= sd.get("float_shares", d.get("float_shares",0))
+            d["si_src"]     = "polygon"
+            # CTB/Util 추정식도 실제 SI% 기반으로 재계산
+            ctb_e, util_e = estimate_ctb(sd["si_pct"], sd["dtc"])
+            d["ctb"]  = ctb_e
+            d["util"] = util_e
+
+        # Short Volume Ratio → CTB 보조 지표로 활용
+        if sym in sv_data:
+            svr = sv_data[sym]["short_vol_ratio"] * 100  # 비율 → %
+            d["short_vol_ratio"] = round(svr, 2)
+            # Short Volume 높으면 CTB 추가 조정
+            if svr > 50:
+                d["ctb"] = round(d.get("ctb",0) * 1.2, 1)
+
+        # 점수 재계산
+        r = sqs(d); d.update(r)
+
+    enriched = len([s for s in syms if s in si_data])
+    print(f"✅ 보강 완료: SI% 실제 데이터 {enriched}개/{len(syms)}")
+
+# demo_stock 제거됨 (실제 데이터만 사용)
 
 # ════════════════════════════════════════════════════════════════
 # 상태
@@ -651,30 +943,71 @@ _enrich_done=False
 
 def init():
     global _ready,_enrich_done
-    real=load_real(ALL_SYMBOLS)
-    for sym in ALL_SYMBOLS:
-        d=real.get(sym) or demo_stock(sym)
+
+    # ── Short Interest API 지원 여부 테스트 ──────────────
+    POLY_KEY = os.environ.get("POLYGON_API_KEY","")
+    if POLY_KEY and HAS_REQ:
+        print("🧪 Short Interest API 테스트 중...")
+        try:
+            r = requests.get(
+                "https://api.polygon.io/v3/short/interest/GME",
+                params={"limit":1,"apiKey":POLY_KEY},
+                timeout=10)
+            print(f"  Short Interest API 응답: {r.status_code}")
+            if r.status_code == 200:
+                data = r.json()
+                results = data.get("results",[])
+                if results:
+                    res = results[0]
+                    print(f"  ✅ SI% 지원됨! GME 공매도: {res.get('short_interest',0):,}주")
+                    print(f"  ✅ 날짜: {res.get('settlement_date','?')}")
+                else:
+                    print(f"  ⚠️ 데이터 없음 (결과 0개): {data}")
+            elif r.status_code == 403:
+                print(f"  ❌ 403 차단 — $29 플랜 미지원 또는 IP 차단")
+                print(f"  응답: {r.text[:200]}")
+            elif r.status_code == 404:
+                print(f"  ❌ 404 — API 엔드포인트 없음 (플랜 미지원)")
+            else:
+                print(f"  ⚠️ 기타 오류: {r.status_code} {r.text[:100]}")
+        except Exception as e:
+            print(f"  ❌ 테스트 실패: {e}")
+    # ────────────────────────────────────────────────────
+
+    # 동적 티커 수집 — ALL_SYMBOLS 하드코딩 불필요!
+    real = load_real([])  # 빈 리스트 전달 (내부에서 자동 수집)
+    for sym, d in real.items():
         r=sqs(d); d.update(r)
         d["ts"]=datetime.now(timezone.utc).isoformat(); d["delta"]=0.0
         _st[sym]=d; _hist[sym]=[]
     _ready=True
-    print(f"🚀 완료 | 실제:{len(real)} 데모:{len(ALL_SYMBOLS)-len(real)}")
+    print(f"🚀 완료 | 실제:{len(real)}개 종목 로드")
     enrich(list(real.keys()),_st)
     _enrich_done=True; print("🏁 전체 완료!")
 
 def tick():
     prev={s:_st[s].get("grade","NO_SQUEEZE") for s in _st}
-    # Fix 7: 장중에만 실제 가격 갱신 (Polygon API)
+    # Fix 7: 장중 가격 갱신 (Polygon snapshot v3 — 15분 지연)
     POLY_KEY=os.environ.get("POLYGON_API_KEY","")
     if HAS_REQ and POLY_KEY and is_market_open():
-        sample=random.sample(ALL_SYMBOLS,min(50,len(ALL_SYMBOLS)))
-        snaps=fetch_polygon_snapshots(sample,POLY_KEY)
-        for sym,snap in snaps.items():
-            if sym in _st:
-                p=snap.get("price",0)
-                if p>0:
-                    _st[sym]["price"]=round(p,2)
-                    _st[sym]["change_pct"]=snap.get("change_pct",0)
+        sample=random.sample(list(_st.keys()),min(100,len(_st)))
+        try:
+            r=requests.get(
+                "https://api.polygon.io/v3/snapshot",
+                params={"ticker.any_of":",".join(sample),"apiKey":POLY_KEY},
+                timeout=15)
+            if r.status_code==200:
+                for item in r.json().get("results",[]):
+                    sym=item.get("ticker","")
+                    session=item.get("session",{})
+                    p=float(session.get("close",0) or 0)
+                    if p>0 and sym in _st:
+                        op=_st[sym].get("price",p)
+                        _st[sym]["price"]=round(p,2)
+                        _st[sym]["change_pct"]=round((p-op)/max(op,0.01)*100,2)
+                        _st[sym]["volume"]=int(session.get("volume",0) or 0)
+        except Exception as e:
+            pass  # 실패해도 계속
 
     soc=fetch_social()
     for sym,sd in soc.items():
@@ -698,7 +1031,7 @@ def tick():
         # Fix 8: 히스토리 1000개 (~8시간)
         h=_hist.setdefault(sym,[])
         h.append({"ts":now,"score":d["score"],"grade":d["grade"]})
-        if len(h)>1000: h.pop(0)
+        if len(h)>200: h.pop(0)
         # Fix 6: 알림 30분 쿨다운
         if d["grade"] in ("IMMINENT","HIGH") and d["grade"]!=prev.get(sym):
             if time.time()-_ALERT_CD.get(sym,0)>1800:
@@ -768,6 +1101,8 @@ app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["*"],allow_
 
 @app.on_event("startup")
 async def startup():
+    global _clients_lock
+    _clients_lock = asyncio.Lock()
     threading.Thread(target=bg_init,daemon=True).start()
     threading.Thread(target=bg_tick,daemon=True).start()
     asyncio.create_task(push_loop())
@@ -800,6 +1135,20 @@ def breakdown(symbol:str):
 
 @app.get("/api/alerts")
 def alerts(limit:int=100): return _alerts[:limit]
+
+@app.get("/api/accumulation")
+def accumulation(limit:int=50):
+    """거래량 급등 + 주가 소폭 = 매집 신호 종목"""
+    rows = []
+    for v in _st.values():
+        vs = v.get("vol_spike", 1)
+        pc = abs(v.get("change_pct", 0))
+        price = v.get("price", 0)
+        # 조건: 거래량 2배↑, 주가 변동 5% 미만, 가격 $20 미만 (페니스탁)
+        if vs >= 2.0 and pc <= 5.0 and 0 < price <= 20:
+            rows.append({**v, "acc_ratio": round(vs / max(pc, 0.1), 1)})
+    # acc_ratio 높을수록 = 거래량 대비 주가 변동 작음 = 강한 매집 신호
+    return sorted(rows, key=lambda x: x.get("acc_ratio", 0), reverse=True)[:limit]
 
 @app.get("/api/market")
 def market_api():
@@ -1003,6 +1352,7 @@ footer{text-align:center;padding:16px;font-size:.63rem;color:#1a1a30;border-top:
       <button class="on" onclick="pg('dashboard')">📊 대시보드</button>
       <button onclick="pg('themes')">🗂️ 테마</button>
       <button onclick="pg('fixes')">🔧 개선사항</button>
+      <button onclick="pg('accumulation')">🎯 매집신호</button>
       <button onclick="pg('alerts')">🔔 알림</button>
       <button onclick="pg('methodology')">📐 방법론</button>
     </nav>
@@ -1124,6 +1474,32 @@ footer{text-align:center;padding:16px;font-size:.63rem;color:#1a1a30;border-top:
 <div class="pg" id="pg-detail">
   <button class="back" onclick="pg('dashboard')">← 대시보드로</button>
   <div id="detC"></div>
+</div>
+
+<!-- 매집신호 -->
+<div class="pg" id="pg-accumulation">
+  <h2 style="margin-bottom:6px;color:#ff4444;font-family:'Space Mono',monospace">🎯 매집 신호 탐지</h2>
+  <p style="font-size:.76rem;color:var(--mu);margin-bottom:12px;line-height:1.7">
+    <b style="color:#ffd000">거래량 급등 + 주가 소폭 상승</b> = 세력이 조용히 사모으는 신호<br>
+    페니스탁 중 거래량이 평균 2배↑인데 주가는 5% 미만으로 움직인 종목
+  </p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:14px" id="accStats"></div>
+  <div class="tw">
+    <table>
+      <thead><tr>
+        <th>심볼</th>
+        <th>매집비율 ⇅</th>
+        <th>거래량 배수</th>
+        <th>주가변동</th>
+        <th>현재가</th>
+        <th>SQS</th>
+        <th>등급</th>
+        <th>테마</th>
+      </tr></thead>
+      <tbody id="accBody"></tbody>
+    </table>
+    <div class="empty" id="accEmp" style="display:none">매집 신호 종목 없음 (데이터 로딩 중...)</div>
+  </div>
 </div>
 
 <!-- 알림 -->
@@ -1282,10 +1658,11 @@ function goTheme(id){
 function pg(n,sym){
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   document.getElementById('pg-'+n).classList.add('on');
-  const nm={dashboard:0,themes:1,fixes:2,alerts:3,methodology:4};
+  const nm={dashboard:0,themes:1,fixes:2,accumulation:3,alerts:4,methodology:5};
   document.querySelectorAll('nav button').forEach((b,i)=>b.classList.toggle('on',i===nm[n]));
   if(n==='detail'&&sym) rd(sym);
   if(n==='alerts') ra();
+  if(n==='accumulation') racc();
 }
 
 function gf(g,btn){ gfil=g; curPage=1; document.querySelectorAll('.fb').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); rt(); }
@@ -1452,6 +1829,41 @@ async function rd(sym){
         scales:{x:{ticks:{color:'#3a3a58',maxTicksLimit:5},grid:{color:'rgba(24,24,48,.5)'}},
                 y:{min:0,max:100,ticks:{color:'#3a3a58'},grid:{color:'rgba(24,24,48,.5)'}}}}});
   }
+}
+
+async function racc(){
+  const data = await fetch('/api/accumulation?limit=100').then(r=>r.json()).catch(()=>[]);
+  const tb = document.getElementById('accBody');
+  const em = document.getElementById('accEmp');
+  const st = document.getElementById('accStats');
+  if(!data.length){ tb.innerHTML=''; em.style.display=''; return; }
+  em.style.display='none';
+  const tcolor={};TD.forEach(t=>tcolor[t.id]=t.color);
+  // 통계
+  const avg_vs = (data.reduce((a,r)=>a+r.vol_spike,0)/data.length).toFixed(1);
+  const avg_pc = (data.reduce((a,r)=>a+Math.abs(r.change_pct||0),0)/data.length).toFixed(1);
+  st.innerHTML=`
+    <div class="sc"><div class="sl">매집 종목수</div><div class="sv" style="color:#ff4444">${data.length}</div></div>
+    <div class="sc"><div class="sl">평균 거래량배수</div><div class="sv" style="color:#ffd000">${avg_vs}x</div></div>
+    <div class="sc"><div class="sl">평균 주가변동</div><div class="sv" style="color:var(--ac)">${avg_pc}%</div></div>
+  `;
+  tb.innerHTML = data.map(r=>{
+    const tc = tcolor[r.theme||'']||'#3a3a58';
+    const chH = (r.change_pct||0)>=0
+      ? `<span class="dp">▲${f(r.change_pct,2)}%</span>`
+      : `<span class="dn">▼${f(Math.abs(r.change_pct),2)}%</span>`;
+    return`<tr onclick="pg('detail','${r.symbol}')" style="cursor:pointer">
+      <td><span class="sym">${r.symbol}</span><div style="font-size:.58rem;color:var(--mu)">${r.name||''}</div></td>
+      <td><span style="font-family:'Space Mono',monospace;color:#ff4444;font-weight:700;font-size:.9rem">${f(r.acc_ratio,1)}</span>
+          <div style="font-size:.6rem;color:var(--mu)">거래량÷주가변동</div></td>
+      <td><span style="font-family:'Space Mono',monospace;color:#ffd000">${f(r.vol_spike,1)}x</span></td>
+      <td>${chH}</td>
+      <td><span style="font-family:'Space Mono',monospace">$${f(r.price)}</span></td>
+      <td><span style="font-family:'Space Mono',monospace;color:${sc(r.score||0)}">${f(r.score,1)}</span></td>
+      <td>${bdg(r.grade||'NO_SQUEEZE')}</td>
+      <td><span class="ttag" style="background:${tc}20;color:${tc};border:1px solid ${tc}40">${(r.theme||'기타').split(' ').slice(0,2).join(' ')}</span></td>
+    </tr>`;
+  }).join('');
 }
 
 async function ra(){
