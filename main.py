@@ -545,27 +545,28 @@ def fetch_polygon_short_interest(syms: list, api_key: str) -> dict:
     if not HAS_REQ or not api_key: return {}
     out = {}
 
-    # 1차 시도: Short Interest API
+    # 조회 기간 설정 (SI 데이터는 보통 2주 단위이므로 넉넉히 30일 설정)
     from datetime import date, timedelta
     end = date.today().strftime("%Y-%m-%d")
     start = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
 
     si_api_ok = False
-    for sym in syms[:5]:  # 5개만 테스트
+    # 1차 시도: 해당 API 권한이 있는지 5개만 테스트
+    for sym in syms[:5]:
         try:
+            # Fix: limit=1과 order=desc를 사용하여 가장 최신 데이터 1개만 요청
             r = requests.get(
                 f"https://api.polygon.io/v3/short/interest/{sym}",
-                params={"date_gte": start, "date_lte": end,
-                        "limit": 1, "apiKey": api_key},
+                params={"limit": 1, "order": "desc", "apiKey": api_key},
                 timeout=8)
             if r.status_code == 200:
                 results = r.json().get("results", [])
                 if results:
                     si_api_ok = True
-                    print(f"  ✅ Short Interest API 지원됨!")
+                    print(f"   ✅ Short Interest API 지원됨!")
                     break
             elif r.status_code in (403, 404):
-                print(f"  ❌ Short Interest API 미지원 ({r.status_code}) → Short Volume으로 대체")
+                print(f"   ❌ Short Interest API 미지원 ({r.status_code}) → Short Volume으로 대체")
                 break
         except: pass
 
@@ -575,27 +576,34 @@ def fetch_polygon_short_interest(syms: list, api_key: str) -> dict:
             try:
                 r = requests.get(
                     f"https://api.polygon.io/v3/short/interest/{sym}",
-                    params={"date_gte": start, "date_lte": end,
-                            "limit": 1, "apiKey": api_key},
+                    params={"limit": 1, "order": "desc", "apiKey": api_key},
                     timeout=8)
                 if r.status_code != 200: continue
                 results = r.json().get("results", [])
                 if not results: continue
                 res = results[0]
-                short_sh = int(res.get("short_interest", 0) or 0)
-                float_sh = int(res.get("shares_outstanding", 0) or 0)
-                avg_vol  = float(res.get("average_daily_volume", 1) or 1)
-                si_pct   = round(short_sh / max(float_sh, 1) * 100, 2)
-                dtc      = round(short_sh / max(avg_vol, 1), 2)
+                
+                # Polygon API 필드명에 맞춰 안전하게 추출
+                short_sh = float(res.get("short_interest", 0) or 0)
+                float_sh = float(res.get("shares_outstanding", 0) or 0)
+                # 만약 퍼센트 필드가 직접 있다면 우선 사용
+                si_pct = res.get("short_interest_pct_float", 0)
+                if not si_pct and float_sh > 0:
+                    si_pct = round(short_sh / float_sh * 100, 2)
+                
+                avg_vol = float(res.get("average_daily_volume", 1) or 1)
+                dtc = res.get("days_to_cover", round(short_sh / max(avg_vol, 1), 2))
+                
                 if si_pct > 0:
                     out[sym] = {"si_pct": si_pct, "dtc": dtc,
-                               "si_shares": short_sh, "float_shares": float_sh}
-                time.sleep(0.1)
+                               "si_shares": int(short_sh), "float_shares": int(float_sh)}
+                time.sleep(0.05) # 속도 조절
             except: pass
     else:
         # 2차 시도: Short Volume API (비율로 SI% 추정)
-        print("  📊 Short Volume API로 SI% 추정 중...")
+        print("   📊 Short Volume API로 SI% 추정 중...")
         target = date.today()
+        # 최근 평일 찾기
         for _ in range(5):
             if target.weekday() < 5: break
             target -= timedelta(days=1)
@@ -603,43 +611,47 @@ def fetch_polygon_short_interest(syms: list, api_key: str) -> dict:
 
         for sym in syms:
             try:
+                # Fix: V3 경로는 반드시 /{sym} 형태여야 함
                 r = requests.get(
-                    f"https://api.polygon.io/v3/short/volume",
-                    params={"ticker": sym, "date": date_str,
-                            "apiKey": api_key},
+                    f"https://api.polygon.io/v3/short/volume/{sym}",
+                    params={"date": date_str, "apiKey": api_key},
                     timeout=8)
                 if r.status_code != 200: continue
                 results = r.json().get("results", [])
                 if not results: continue
                 res = results[0]
-                # short_volume / total_volume = 당일 공매도 비율
-                sv  = float(res.get("short_volume", 0) or 0)
-                tv  = float(res.get("total_volume", 1) or 1)
+                
+                sv = float(res.get("short_volume", 0) or 0)
+                tv = float(res.get("total_volume", 1) or 1)
+                # 숏볼륨 비율(%) - SI와는 다르나 활성도를 보여줌
                 ratio = round(sv / max(tv, 1) * 100, 2)
+                
                 if ratio > 0:
-                    # ratio는 당일 공매도 비율 (SI%와 다르지만 근사치로 사용)
-                    out[sym] = {"si_pct": ratio, "dtc": 0.0,
+                    # SI%가 없는 대신 숏볼륨 비율을 사용하고, 소스를 표시함
+                    out[sym] = {"si_pct": ratio, "dtc": 1.0, 
                                "si_shares": int(sv), "float_shares": 0,
                                "src": "short_volume"}
-                time.sleep(0.08)
+                time.sleep(0.05)
             except: pass
 
-    print(f"  📊 SI 데이터: {len(out)}개/{len(syms)}")
+    print(f"   📊 SI 데이터 확보: {len(out)}개/{len(syms)}")
     return out
 
 def fetch_polygon_short_volume_batch(syms: list, api_key: str) -> dict:
-    """Polygon Short Volume API — 단기 공매도 거래량 비율"""
+    """Polygon Short Volume API — 단기 공매도 거래량 비율 상세 수집"""
     if not HAS_REQ or not api_key: return {}
     out = {}
     from datetime import date, timedelta
-    # 최근 거래일
+    
     target = date.today()
     for _ in range(5):
         if target.weekday() < 5: break
         target -= timedelta(days=1)
     date_str = target.strftime("%Y-%m-%d")
-    for sym in syms[:200]:  # rate limit 고려 상위 200개만
+    
+    for sym in syms[:200]: 
         try:
+            # Fix: 경로에 /{sym} 추가
             r = requests.get(
                 f"https://api.polygon.io/v3/short/volume/{sym}",
                 params={"date": date_str, "apiKey": api_key},
@@ -648,12 +660,17 @@ def fetch_polygon_short_volume_batch(syms: list, api_key: str) -> dict:
             results = r.json().get("results", [])
             if not results: continue
             res = results[0]
-            sv_ratio = float(res.get("short_volume_ratio", 0) or 0)
+            
+            # Polygon V3 응답 필드 확인: short_volume / total_volume 직접 계산
+            sv = float(res.get("short_volume", 0) or 0)
+            tv = float(res.get("total_volume", 1) or 1)
+            sv_ratio = sv / tv if tv > 0 else 0
+            
             if sv_ratio > 0:
                 out[sym] = {"short_vol_ratio": round(sv_ratio, 4)}
-            time.sleep(0.08)
+            time.sleep(0.05)
         except: pass
-    print(f"  📊 Short Volume: {len(out)}개")
+    print(f"   📊 상세 Short Volume 수집: {len(out)}개")
     return out
 
 
