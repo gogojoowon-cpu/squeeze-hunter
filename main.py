@@ -541,35 +541,90 @@ def calc_rsi(closes)->float:
 # 메인 데이터 로더
 # ════════════════════════════════════════════════════════════════
 def fetch_polygon_short_interest(syms: list, api_key: str) -> dict:
-    """Polygon Short Interest API — SI%/DTC 실제 데이터 (2025.6 추가)"""
+    """SI% 데이터 수집 — Short Interest API → Short Volume 순서로 시도"""
     if not HAS_REQ or not api_key: return {}
     out = {}
-    # 최근 보고일 (FINRA 격주 발표 기준)
+
+    # 1차 시도: Short Interest API
     from datetime import date, timedelta
     end = date.today().strftime("%Y-%m-%d")
     start = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
-    for sym in syms:
+
+    si_api_ok = False
+    for sym in syms[:5]:  # 5개만 테스트
         try:
             r = requests.get(
                 f"https://api.polygon.io/v3/short/interest/{sym}",
                 params={"date_gte": start, "date_lte": end,
                         "limit": 1, "apiKey": api_key},
                 timeout=8)
-            if r.status_code != 200: continue
-            results = r.json().get("results", [])
-            if not results: continue
-            res = results[0]
-            short_shares = int(res.get("short_interest", 0) or 0)
-            float_sh = int(res.get("shares_outstanding", 0) or 0)
-            avg_vol = float(res.get("average_daily_volume", 1) or 1)
-            si_pct = round(short_shares / max(float_sh, 1) * 100, 2) if float_sh > 0 else 0
-            dtc = round(short_shares / max(avg_vol, 1), 2) if avg_vol > 0 else 0
-            if si_pct > 0:
-                out[sym] = {"si_pct": si_pct, "dtc": dtc,
-                           "si_shares": short_shares, "float_shares": float_sh}
-            time.sleep(0.1)
+            if r.status_code == 200:
+                results = r.json().get("results", [])
+                if results:
+                    si_api_ok = True
+                    print(f"  ✅ Short Interest API 지원됨!")
+                    break
+            elif r.status_code in (403, 404):
+                print(f"  ❌ Short Interest API 미지원 ({r.status_code}) → Short Volume으로 대체")
+                break
         except: pass
-    print(f"  📊 Short Interest: {len(out)}개/{len(syms)}")
+
+    if si_api_ok:
+        # Short Interest API 전체 수집
+        for sym in syms:
+            try:
+                r = requests.get(
+                    f"https://api.polygon.io/v3/short/interest/{sym}",
+                    params={"date_gte": start, "date_lte": end,
+                            "limit": 1, "apiKey": api_key},
+                    timeout=8)
+                if r.status_code != 200: continue
+                results = r.json().get("results", [])
+                if not results: continue
+                res = results[0]
+                short_sh = int(res.get("short_interest", 0) or 0)
+                float_sh = int(res.get("shares_outstanding", 0) or 0)
+                avg_vol  = float(res.get("average_daily_volume", 1) or 1)
+                si_pct   = round(short_sh / max(float_sh, 1) * 100, 2)
+                dtc      = round(short_sh / max(avg_vol, 1), 2)
+                if si_pct > 0:
+                    out[sym] = {"si_pct": si_pct, "dtc": dtc,
+                               "si_shares": short_sh, "float_shares": float_sh}
+                time.sleep(0.1)
+            except: pass
+    else:
+        # 2차 시도: Short Volume API (비율로 SI% 추정)
+        print("  📊 Short Volume API로 SI% 추정 중...")
+        target = date.today()
+        for _ in range(5):
+            if target.weekday() < 5: break
+            target -= timedelta(days=1)
+        date_str = target.strftime("%Y-%m-%d")
+
+        for sym in syms:
+            try:
+                r = requests.get(
+                    f"https://api.polygon.io/v3/short/volume",
+                    params={"ticker": sym, "date": date_str,
+                            "apiKey": api_key},
+                    timeout=8)
+                if r.status_code != 200: continue
+                results = r.json().get("results", [])
+                if not results: continue
+                res = results[0]
+                # short_volume / total_volume = 당일 공매도 비율
+                sv  = float(res.get("short_volume", 0) or 0)
+                tv  = float(res.get("total_volume", 1) or 1)
+                ratio = round(sv / max(tv, 1) * 100, 2)
+                if ratio > 0:
+                    # ratio는 당일 공매도 비율 (SI%와 다르지만 근사치로 사용)
+                    out[sym] = {"si_pct": ratio, "dtc": 0.0,
+                               "si_shares": int(sv), "float_shares": 0,
+                               "src": "short_volume"}
+                time.sleep(0.08)
+            except: pass
+
+    print(f"  📊 SI 데이터: {len(out)}개/{len(syms)}")
     return out
 
 def fetch_polygon_short_volume_batch(syms: list, api_key: str) -> dict:
@@ -603,53 +658,71 @@ def fetch_polygon_short_volume_batch(syms: list, api_key: str) -> dict:
 
 
 def fetch_all_tickers(api_key: str) -> list:
-    """Polygon API로 전체 미국 상장 종목 자동 수집"""
+    """Polygon/Massive API로 전체 미국 상장 종목 자동 수집
+    exchange는 하나씩 따로 호출 (콤마 여러개 안됨)
+    """
     if not HAS_REQ or not api_key:
         return []
     all_tickers = []
-    url = "https://api.polygon.io/v3/reference/tickers"
-    params = {
-        "market": "stocks",
-        "exchange": "XNAS,XNYS,XASE",  # NASDAQ + NYSE + AMEX
-        "active": "true",
-        "limit": 1000,
-        "apiKey": api_key
-    }
-    page = 0
-    while True:
-        try:
-            r = requests.get(url, params=params, timeout=20)
-            if r.status_code != 200:
-                print(f"  ⚠️ 티커목록 오류: {r.status_code}")
+    seen = set()
+
+    # NASDAQ, NYSE, AMEX 따로따로 수집
+    exchanges = ["XNAS", "XNYS", "XASE"]
+
+    for exchange in exchanges:
+        url = "https://api.polygon.io/v3/reference/tickers"
+        params = {
+            "market": "stocks",
+            "exchange": exchange,
+            "active": "true",
+            "limit": 1000,
+            "apiKey": api_key
+        }
+        page = 0
+        print(f"  📋 {exchange} 수집 중...")
+        while True:
+            try:
+                r = requests.get(url, params=params, timeout=20)
+                if r.status_code != 200:
+                    print(f"  ⚠️ {exchange} 오류: {r.status_code} {r.text[:100]}")
+                    break
+                data = r.json()
+                results = data.get("results", [])
+                if not results:
+                    break
+                added = 0
+                for item in results:
+                    sym = item.get("ticker", "")
+                    name = item.get("name", "")
+                    # 필터: 알파벳만, 1~5글자, 워런트/유닛/우선주 제외
+                    if (sym and sym not in seen
+                        and sym.isalpha() and 1 <= len(sym) <= 5
+                        and "WARRANT" not in name.upper()
+                        and "UNIT" not in name.upper()[:15]
+                        and "RIGHT" not in name.upper()[:15]
+                        and "PREFERRED" not in name.upper()
+                        and item.get("type","") not in ("WARRANT","RIGHT","UNIT")):
+                        all_tickers.append({
+                            "symbol": sym, "name": name,
+                            "type": item.get("type",""),
+                            "exchange": exchange
+                        })
+                        seen.add(sym)
+                        added += 1
+                page += 1
+                next_url = data.get("next_url")
+                if not next_url:
+                    print(f"  ✅ {exchange}: {added}개 추가 (총 {len(all_tickers)}개)")
+                    break
+                url = next_url
+                params = {"apiKey": api_key}
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"  ⚠️ {exchange} 오류: {e}")
                 break
-            data = r.json()
-            results = data.get("results", [])
-            if not results:
-                break
-            for item in results:
-                sym = item.get("ticker", "")
-                name = item.get("name", "")
-                # 필터: 알파벳만, 1~6글자, 워런트/유닛 제외
-                if (sym and sym.isalpha() and 1 <= len(sym) <= 5
-                    and "WARRANT" not in name.upper()
-                    and "UNIT" not in name.upper()[:10]
-                    and "RIGHT" not in name.upper()[:10]
-                    and "PREFERRED" not in name.upper()):
-                    all_tickers.append({"symbol": sym, "name": name,
-                        "type": item.get("type",""), "exchange": item.get("primary_exchange","")})
-            page += 1
-            print(f"  📋 티커목록 {page}페이지: 누적 {len(all_tickers)}개")
-            # next_url로 페이지네이션
-            next_url = data.get("next_url")
-            if not next_url:
-                break
-            url = next_url + f"&apiKey={api_key}"
-            params = {}  # next_url에 파라미터 포함됨
-            time.sleep(0.5)
-        except Exception as e:
-            print(f"  ⚠️ 티커목록 오류: {e}")
-            break
-    print(f"✅ 전체 티커 수집: {len(all_tickers)}개")
+        time.sleep(1)
+
+    print(f"✅ 전체 티커 수집 완료: {len(all_tickers)}개")
     return all_tickers
 
 
@@ -767,7 +840,7 @@ def fetch_polygon_details(sym:str, api_key:str)->dict:
     except: return {}
 
 def load_real(syms:list)->dict:
-    """Polygon API로 전체 미국 상장 종목 자동 수집 + 가격 데이터 로드"""
+    """Polygon API로 종목 가격 데이터 로드 (동적 수집 또는 하드코딩 폴백)"""
     POLY_KEY=os.environ.get("POLYGON_API_KEY","")
     if not POLY_KEY:
         print("⚠️ POLYGON_API_KEY 없음 → 데이터 없음")
@@ -775,12 +848,18 @@ def load_real(syms:list)->dict:
     if not HAS_REQ: return {}
     out={}
 
-    # 1단계: 전체 티커 자동 수집 (하드코딩 불필요!)
-    print("📋 Polygon에서 전체 상장 종목 수집 중...")
-    all_ticker_info = fetch_all_tickers(POLY_KEY)
-    dynamic_syms = [t["symbol"] for t in all_ticker_info]
-    ticker_names = {t["symbol"]: t["name"] for t in all_ticker_info}
-    print(f"✅ 수집된 티커: {len(dynamic_syms)}개")
+    # 1단계: 티커 수집 (syms가 비어있으면 동적 수집 시도)
+    if not syms:
+        print("📋 Polygon에서 전체 상장 종목 수집 중...")
+        all_ticker_info = fetch_all_tickers(POLY_KEY)
+        dynamic_syms = [t["symbol"] for t in all_ticker_info]
+        ticker_names = {t["symbol"]: t["name"] for t in all_ticker_info}
+        print(f"✅ 동적 수집: {len(dynamic_syms)}개")
+    else:
+        # 하드코딩 폴백
+        dynamic_syms = syms
+        ticker_names = {s: s for s in syms}
+        print(f"📋 하드코딩 티커 사용: {len(dynamic_syms)}개")
 
     # 2단계: 소셜 데이터
     print("📱 소셜 데이터...")
@@ -944,38 +1023,14 @@ _enrich_done=False
 def init():
     global _ready,_enrich_done
 
-    # ── Short Interest API 지원 여부 테스트 ──────────────
-    POLY_KEY = os.environ.get("POLYGON_API_KEY","")
-    if POLY_KEY and HAS_REQ:
-        print("🧪 Short Interest API 테스트 중...")
-        try:
-            r = requests.get(
-                "https://api.polygon.io/v3/short/interest/GME",
-                params={"limit":1,"apiKey":POLY_KEY},
-                timeout=10)
-            print(f"  Short Interest API 응답: {r.status_code}")
-            if r.status_code == 200:
-                data = r.json()
-                results = data.get("results",[])
-                if results:
-                    res = results[0]
-                    print(f"  ✅ SI% 지원됨! GME 공매도: {res.get('short_interest',0):,}주")
-                    print(f"  ✅ 날짜: {res.get('settlement_date','?')}")
-                else:
-                    print(f"  ⚠️ 데이터 없음 (결과 0개): {data}")
-            elif r.status_code == 403:
-                print(f"  ❌ 403 차단 — $29 플랜 미지원 또는 IP 차단")
-                print(f"  응답: {r.text[:200]}")
-            elif r.status_code == 404:
-                print(f"  ❌ 404 — API 엔드포인트 없음 (플랜 미지원)")
-            else:
-                print(f"  ⚠️ 기타 오류: {r.status_code} {r.text[:100]}")
-        except Exception as e:
-            print(f"  ❌ 테스트 실패: {e}")
-    # ────────────────────────────────────────────────────
-
-    # 동적 티커 수집 — ALL_SYMBOLS 하드코딩 불필요!
-    real = load_real([])  # 빈 리스트 전달 (내부에서 자동 수집)
+    # 동적 티커 수집 → 실패 시 하드코딩 폴백
+    real = load_real([])
+    
+    # 동적 수집 실패 시 하드코딩 티커로 폴백
+    if len(real) < 10:
+        print("⚠️ 동적 수집 실패 → 하드코딩 티커로 폴백")
+        real = load_real(ALL_SYMBOLS)
+    
     for sym, d in real.items():
         r=sqs(d); d.update(r)
         d["ts"]=datetime.now(timezone.utc).isoformat(); d["delta"]=0.0
