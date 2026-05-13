@@ -28,6 +28,7 @@ def _row(k, v):
         "float_shares": v.get("float_shares", 0),
         "market_cap": v.get("market_cap", 0),
         "vol_spike": v.get("vol_spike", 1),
+        "acc_score": v.get("acc_score", 0),
     }
 
 
@@ -68,6 +69,7 @@ async def push_loop():
                 "mentions": d.get("mentions", 0),
                 "has_catalyst": d.get("has_catalyst", False),
                 "vol_spike": d.get("vol_spike", 1),
+                "acc_score": d.get("acc_score", 0),
             }))
 
 
@@ -128,15 +130,36 @@ def register_routes(app):
         }
 
     @app.get("/api/accumulation")
-    def accumulation(limit: int = 50):
+    def accumulation(limit: int = 100, min_score: int = 40):
+        """Wyckoff + OBV + CMF 기반 진짜 매집 신호"""
         rows = []
         for v in state.stocks.values():
-            vs = v.get("vol_spike", 1)
-            pc = abs(v.get("change_pct", 0))
-            price = v.get("price", 0)
-            if vs >= 2.0 and pc <= 5.0 and 0 < price <= 20:
-                rows.append({**v, "acc_ratio": round(vs / max(pc, 0.1), 1)})
-        return sorted(rows, key=lambda x: x.get("acc_ratio", 0), reverse=True)[:limit]
+            acc = v.get("acc_score", 0)
+            if acc < min_score:
+                continue
+
+            # 보조 필터: 너무 큰 종목 제외 (시총 100억↓)
+            mcap = v.get("market_cap", 0)
+            if mcap > 10_000_000_000:
+                continue
+
+            # 등급 분류
+            if acc >= 75:
+                tier = "STRONG"
+            elif acc >= 60:
+                tier = "ACTIVE"
+            elif acc >= 45:
+                tier = "EMERGING"
+            else:
+                tier = "WEAK"
+
+            rows.append({
+                **v,
+                "acc_tier": tier,
+                "acc_summary": " | ".join(v.get("acc_signals", [])[:3]),
+            })
+
+        return sorted(rows, key=lambda x: x.get("acc_score", 0), reverse=True)[:limit]
 
     @app.get("/api/market")
     def market_api():
