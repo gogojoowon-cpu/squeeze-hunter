@@ -15,7 +15,7 @@ def grade(s: float) -> str:
 
 
 def sqs(m: dict) -> dict:
-    """v2 점수식 — 10가지 개선 반영"""
+    """v3 점수식 — 10가지 개선 + Wyckoff 매집 반영"""
     si_raw = m.get("si_pct", 0)
     si = clamp(si_raw / 30, 0, 1) * 20 + clamp((si_raw - 30) / 100, 0, 1) * 5
 
@@ -46,15 +46,9 @@ def sqs(m: dict) -> dict:
     elif m.get("macd_histogram", 0) > 0:
         macd_score = 2.0
 
-    # 매집 신호
-    vs = m.get("vol_spike", 1)
-    pc = abs(m.get("change_pct", 0))
-    if vs >= 3 and pc <= 3:
-        acc = clamp((vs - 3) / 7, 0, 1) * 6
-    elif vs >= 2 and pc <= 2:
-        acc = clamp((vs - 2) / 8, 0, 1) * 3
-    else:
-        acc = 0.0
+    # 매집 신호 (Wyckoff + OBV + CMF) — 최대 8점
+    acc_score_raw = m.get("acc_score", 0)
+    acc = (acc_score_raw / 100) * 8
 
     # 소셜 속도 (로그 스케일)
     sv = m.get("social_velocity", 0)
