@@ -13,13 +13,14 @@ def _key_ok() -> bool:
 
 # ────────── 티커 목록 ──────────
 def fetch_all_tickers() -> list[dict]:
-    """전체 미국 상장 종목 (NYSE/NASDAQ) — 동적 수집"""
+    """전체 미국 상장 종목 (NASDAQ + NYSE) — 동적 수집"""
     if not _key_ok():
         print("❌ POLYGON_API_KEY 미설정")
         return []
 
     out = []
     seen = set()
+    # XASE(NYSE American)는 페니스탁 위주 + 타임아웃 잦음 → 제외
     for exchange in ["XNAS", "XNYS"]:
         print(f"  📋 {exchange} 수집 중...")
         cursor = None
@@ -36,7 +37,7 @@ def fetch_all_tickers() -> list[dict]:
                     params["cursor"] = cursor
 
                 r = requests.get(f"{BASE}/v3/reference/tickers",
-                                 params=params, timeout=20)
+                                 params=params, timeout=30)
                 if r.status_code != 200:
                     print(f"    ⚠️ {exchange} {r.status_code}: {r.text[:150]}")
                     break
@@ -52,7 +53,8 @@ def fetch_all_tickers() -> list[dict]:
                     t = item.get("type", "")
                     if (sym and sym not in seen and sym.isalpha()
                             and 1 <= len(sym) <= 5
-                            and t not in ("WARRANT", "RIGHT", "UNIT", "SP", "ETF", "ETV", "ETN")
+                            and t not in ("WARRANT", "RIGHT", "UNIT", "SP",
+                                          "ETF", "ETV", "ETN")
                             and "WARRANT" not in name.upper()
                             and "PREFERRED" not in name.upper()):
                         out.append({
@@ -119,9 +121,9 @@ def fetch_grouped_daily() -> dict:
     return out
 
 
-# ────────── 일봉 90일 ──────────
+# ────────── 일봉 90일 + 매집 지표 ──────────
 def fetch_aggs(sym: str) -> dict:
-    """90일 OHLCV → RSI/52주고저/거래량평균 (1시간 캐시)"""
+    """90일 OHLCV → RSI/52주고저/매집지표 (1시간 캐시)"""
     if not _key_ok():
         return {}
     cached = state.aggs_cache.get(sym)
@@ -139,32 +141,40 @@ def fetch_aggs(sym: str) -> dict:
 
         r = requests.get(
             f"{BASE}/v2/aggs/ticker/{sym}/range/1/day/{start}/{end}",
-            params={"adjusted": "true", "sort": "asc", "limit": 90, "apiKey": POLYGON_API_KEY},
+            params={"adjusted": "true", "sort": "asc", "limit": 90,
+                    "apiKey": POLYGON_API_KEY},
             timeout=10,
         )
         if r.status_code != 200:
             return {}
         results = r.json().get("results", [])
-        if len(results) < 5:
+        if len(results) < 20:
             return {}
 
         closes = [x["c"] for x in results]
+        opens = [x["o"] for x in results]
         vols = [x["v"] for x in results]
         highs = [x["h"] for x in results]
         lows = [x["l"] for x in results]
 
-        # RSI 14
+        # 기본 지표
         rsi_v = _calc_rsi(closes)
-        avg_vol = sum(vols[-20:]) / max(len(vols[-20:]), 1)
+        avg_vol_20 = sum(vols[-20:]) / max(len(vols[-20:]), 1)
+        avg_vol_50 = sum(vols[-50:]) / max(len(vols[-50:]), 1) if len(vols) >= 50 else avg_vol_20
         h52, l52, cur = max(highs), min(lows), closes[-1]
+
+        # ━━━ 매집 지표 계산 ━━━
+        accumulation = _calc_accumulation(opens, closes, highs, lows, vols)
 
         result = {
             "rsi14": rsi_v,
-            "avg_vol": avg_vol,
+            "avg_vol": avg_vol_20,
+            "avg_vol_50": avg_vol_50,
             "high_52w": round(h52, 2),
             "low_52w": round(l52, 2),
             "dist_52w": round((h52 - cur) / max(h52, 1), 3),
-            "vol_spike": round(vols[-1] / max(avg_vol, 1), 3),
+            "vol_spike": round(vols[-1] / max(avg_vol_20, 1), 3),
+            **accumulation,  # 매집 지표 병합
             "_ts": time.time(),
         }
         state.aggs_cache[sym] = result
@@ -190,6 +200,156 @@ def _calc_rsi(closes: list[float]) -> float:
     return round(100 - 100 / (1 + rs), 1)
 
 
+def _calc_accumulation(opens, closes, highs, lows, vols) -> dict:
+    """Wyckoff + OBV + CMF 기반 매집 신호 계산 (0~100점)"""
+    n = len(closes)
+    if n < 20:
+        return {"acc_score": 0, "acc_signals": []}
+
+    # ━━━ 1. OBV (On-Balance Volume) ━━━
+    obv = [0]
+    for i in range(1, n):
+        if closes[i] > closes[i-1]:
+            obv.append(obv[-1] + vols[i])
+        elif closes[i] < closes[i-1]:
+            obv.append(obv[-1] - vols[i])
+        else:
+            obv.append(obv[-1])
+
+    # OBV 추세: 최근 20일 기울기
+    obv_recent = obv[-20:]
+    obv_base = abs(obv_recent[0]) + 1
+    obv_slope = (obv_recent[-1] - obv_recent[0]) / obv_base
+
+    # ━━━ 2. CMF (Chaikin Money Flow, 20일) ━━━
+    mfv_sum = 0.0
+    vol_sum = 0.0
+    for i in range(max(n-20, 0), n):
+        hl = highs[i] - lows[i]
+        if hl == 0:
+            mfm = 0
+        else:
+            mfm = ((closes[i] - lows[i]) - (highs[i] - closes[i])) / hl
+        mfv = mfm * vols[i]
+        mfv_sum += mfv
+        vol_sum += vols[i]
+    cmf = mfv_sum / max(vol_sum, 1)
+
+    # ━━━ 3. 거래량 급등 일수 (최근 10일 중) ━━━
+    if n >= 30:
+        avg_base = sum(vols[-30:-10]) / 20
+    else:
+        avg_base = sum(vols[:max(n-10, 1)]) / max(n-10, 1)
+    vol_spike_days = sum(1 for v in vols[-10:] if v >= avg_base * 2.0)
+
+    # ━━━ 4. 가격 안정성 (ATR / 가격) ━━━
+    atr_sum = 0.0
+    atr_cnt = 0
+    for i in range(max(n-10, 1), n):
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i-1]),
+            abs(lows[i] - closes[i-1]),
+        )
+        atr_sum += tr
+        atr_cnt += 1
+    atr = atr_sum / max(atr_cnt, 1)
+    price_stability = atr / max(closes[-1], 0.01)
+
+    # ━━━ 5. Wyckoff Spring (하단 지지 테스트 + 회복) ━━━
+    near_support = False
+    spring_recovery = False
+    if n >= 60:
+        low_60 = min(lows[-60:])
+        low_20 = min(lows[-20:])
+        near_support = (low_20 - low_60) / max(low_60, 0.01) < 0.05
+        for i in range(max(n-15, 1), n):
+            if lows[i] <= low_60 * 1.03 and closes[i] > lows[i] * 1.02:
+                if vols[i] >= avg_base * 2:
+                    spring_recovery = True
+                    break
+
+    # ━━━ 6. 매집 vs 분산 캔들 비율 ━━━
+    acc_candles = 0
+    dist_candles = 0
+    for i in range(max(n-20, 0), n):
+        if vols[i] >= avg_base * 1.3:
+            candle_range = highs[i] - lows[i]
+            if candle_range > 0:
+                close_position = (closes[i] - lows[i]) / candle_range
+                if close_position >= 0.6:
+                    acc_candles += 1
+                elif close_position <= 0.4:
+                    dist_candles += 1
+    acc_ratio = acc_candles / max(acc_candles + dist_candles, 1)
+
+    # ━━━ 점수 산정 ━━━
+    signals = []
+    score = 0
+
+    # OBV 상승 추세 (25점)
+    if obv_slope > 0.1:
+        score += 25
+        signals.append(f"OBV+{obv_slope*100:.1f}%")
+    elif obv_slope > 0:
+        score += 12
+        signals.append("OBV 약상승")
+
+    # CMF (20점)
+    if cmf > 0.15:
+        score += 20
+        signals.append(f"CMF강세{cmf:+.2f}")
+    elif cmf > 0.05:
+        score += 10
+        signals.append(f"CMF{cmf:+.2f}")
+    elif cmf < -0.1:
+        score -= 5
+
+    # 거래량 폭증 일수 (15점)
+    if vol_spike_days >= 5:
+        score += 15
+        signals.append(f"거래량폭증{vol_spike_days}일")
+    elif vol_spike_days >= 3:
+        score += 8
+        signals.append(f"거래량증가{vol_spike_days}일")
+
+    # 가격 안정 + 거래량 (15점)
+    if price_stability < 0.03 and vol_spike_days >= 2:
+        score += 15
+        signals.append("횡보+거래량↑")
+    elif price_stability < 0.05 and vol_spike_days >= 2:
+        score += 8
+
+    # Wyckoff Spring (15점)
+    if spring_recovery:
+        score += 15
+        signals.append("⚡Spring매집막바지")
+    elif near_support and vol_spike_days >= 2:
+        score += 8
+        signals.append("지지선테스트")
+
+    # 매집 캔들 우세 (10점)
+    if acc_ratio >= 0.7 and (acc_candles + dist_candles) >= 5:
+        score += 10
+        signals.append(f"매집{acc_candles}:{dist_candles}분산")
+    elif acc_ratio >= 0.55 and (acc_candles + dist_candles) >= 5:
+        score += 5
+
+    return {
+        "acc_score": max(0, min(100, score)),
+        "acc_signals": signals,
+        "obv_slope": round(obv_slope, 3),
+        "cmf": round(cmf, 3),
+        "vol_spike_days": vol_spike_days,
+        "price_stability": round(price_stability, 4),
+        "acc_candles": acc_candles,
+        "dist_candles": dist_candles,
+        "acc_ratio": round(acc_ratio, 2),
+        "near_support": near_support,
+        "spring_recovery": spring_recovery,
+    }
+
+
 # ────────── 종목 상세 ──────────
 def fetch_ticker_details(sym: str) -> dict:
     if not _key_ok():
@@ -212,7 +372,6 @@ def fetch_ticker_details(sym: str) -> dict:
 
 # ────────── Short Interest ──────────
 def fetch_short_interest_batch() -> dict:
-    """전체 종목 SI 일괄 수집"""
     if not _key_ok():
         return {}
     out = {}
@@ -247,7 +406,7 @@ def fetch_short_interest_batch() -> dict:
                     "si_shares": si_sh,
                     "dtc": round(dtc, 2),
                     "avg_vol": avg_v,
-                    "si_pct": 0.0,  # float으로 나중에 계산
+                    "si_pct": 0.0,
                 }
         print(f"  ✅ Short Interest: {len(out)}개")
     except Exception as e:
@@ -434,11 +593,9 @@ def fetch_news_batch(limit: int = 1000) -> dict:
 
 # ────────── 실시간 스냅샷 ──────────
 def fetch_snapshots(syms: list[str]) -> dict:
-    """장중 실시간 가격 (15분 지연)"""
     if not _key_ok() or not syms:
         return {}
     out = {}
-    # 100개씩 배치
     for i in range(0, len(syms), 100):
         batch = syms[i:i+100]
         try:
