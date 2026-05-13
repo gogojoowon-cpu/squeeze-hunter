@@ -13,14 +13,14 @@ def _key_ok() -> bool:
 
 # ────────── 티커 목록 ──────────
 def fetch_all_tickers() -> list[dict]:
-    """전체 미국 상장 종목 (NYSE/NASDAQ/AMEX) — 동적 수집"""
+    """전체 미국 상장 종목 (NYSE/NASDAQ) — 동적 수집"""
     if not _key_ok():
         print("❌ POLYGON_API_KEY 미설정")
         return []
 
     out = []
     seen = set()
-    for exchange in ["XNAS", "XNYS", "XASE"]:
+    for exchange in ["XNAS", "XNYS"]:
         print(f"  📋 {exchange} 수집 중...")
         cursor = None
         while True:
