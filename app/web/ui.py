@@ -233,21 +233,21 @@ footer{text-align:center;padding:16px;font-size:.63rem;color:#1a1a30;border-top:
 
 <div class="pg" id="pg-fixes">
   <h2 style="font-size:.95rem;color:var(--ac);margin-bottom:6px">🔧 v3 개선사항</h2>
-  <p style="font-size:.74rem;color:var(--mu);margin-bottom:12px">모듈화 + 동적 티커 수집 + 소셜 오류 수정</p>
+  <p style="font-size:.74rem;color:var(--mu);margin-bottom:12px">모듈화 + 동적 티커 수집 + Wyckoff 매집신호</p>
   <div class="fix-grid">
-    <div class="fix-card"><div class="fix-num">v3-1</div><div class="fix-title" style="color:var(--ac)">모듈 분리</div><div class="fix-desc">단일 파일 → app/ 패키지 분리<br>config / providers / pipeline / api / web<br>→ 유지보수 + Railway 배포 최적화</div></div>
-    <div class="fix-card"><div class="fix-num">v3-2</div><div class="fix-title" style="color:var(--ac)">동적 티커 수집</div><div class="fix-desc">하드코딩 660개 → Polygon API<br>NYSE/NASDAQ/AMEX 7000+ 종목<br>→ 실제 미국 시장 전체 커버</div></div>
-    <div class="fix-card"><div class="fix-num">v3-3</div><div class="fix-title" style="color:var(--ac)">소셜 NoneType 수정</div><div class="fix-desc">Apewisdom null 값 → 안전 변환<br>_to_int / _to_float 헬퍼 추가<br>→ 로딩 중 오류 메시지 사라짐</div></div>
+    <div class="fix-card"><div class="fix-num">v3-1</div><div class="fix-title" style="color:var(--ac)">모듈 분리</div><div class="fix-desc">단일 파일 → app/ 패키지 분리<br>config / providers / pipeline / api / web</div></div>
+    <div class="fix-card"><div class="fix-num">v3-2</div><div class="fix-title" style="color:var(--ac)">동적 티커 수집</div><div class="fix-desc">하드코딩 660개 → Polygon API<br>NASDAQ+NYSE 6500+ 종목</div></div>
+    <div class="fix-card"><div class="fix-num">v3-3</div><div class="fix-title" style="color:#ff4444">Wyckoff 매집신호</div><div class="fix-desc">OBV + CMF + Spring + 매집캔들<br>월스트리트 다중지표 검증</div></div>
     <div class="fix-card"><div class="fix-num">Fix 1</div><div class="fix-title" style="color:#ff2255">SI% 비선형 스케일</div><div class="fix-desc">30% 초과분 보너스 최대 5점<br>최대 25점 (GME 2021 정확 반영)</div></div>
     <div class="fix-card"><div class="fix-num">Fix 2</div><div class="fix-title" style="color:#ff8800">RSI 과매수 패널티</div><div class="fix-desc">RSI 70↑ = -2점 (이미 끝난 신호)<br>RSI 30~50 = +3점 (최적 구간)</div></div>
-    <div class="fix-card"><div class="fix-num">Fix 3</div><div class="fix-title" style="color:#a855f7">소셜 속도 로그 스케일</div><div class="fix-desc">로그 스케일로 500~5000% 차별화<br>→ 한타 급 폭발 정확 반영</div></div>
-    <div class="fix-card"><div class="fix-num">Fix 4</div><div class="fix-title" style="color:#3b82f6">CTB 추정식 개선</div><div class="fix-desc">SI×1.8 + DTC×3.2 (다변수)<br>→ 실제 차입 시장 근사</div></div>
-    <div class="fix-card"><div class="fix-num">Fix 5</div><div class="fix-title" style="color:#00ff9d">상장폐지 종목 제거</div><div class="fix-desc">BBBY, SIVB, FRC, SI 등 자동 제외<br>저거래 유령종목도 필터링</div></div>
-    <div class="fix-card"><div class="fix-num">Fix 6</div><div class="fix-title" style="color:#eab308">알림 중복 방지</div><div class="fix-desc">종목당 30분 쿨다운<br>→ 의미있는 알림만 표시</div></div>
-    <div class="fix-card"><div class="fix-num">Fix 7</div><div class="fix-title" style="color:#06b6d4">장중 여부 체크</div><div class="fix-desc">ET 9:30~16:00 장중에만 갱신<br>장중/프리마켓/마감 표시</div></div>
-    <div class="fix-card"><div class="fix-num">Fix 8</div><div class="fix-title" style="color:#10b981">히스토리 8시간치</div><div class="fix-desc">1000개 = 약 8시간치<br>→ 하루 추세 분석</div></div>
-    <div class="fix-card"><div class="fix-num">Fix 9</div><div class="fix-title" style="color:#f43f5e">새로고침 빈화면 방지</div><div class="fix-desc">/api/snapshot REST fallback<br>→ 즉시 데이터 표시</div></div>
-    <div class="fix-card"><div class="fix-num">Fix 10</div><div class="fix-title" style="color:#8b5cf6">모바일 드롭다운</div><div class="fix-desc">640px 이하 자동 드롭다운<br>→ 모바일 사용성 개선</div></div>
+    <div class="fix-card"><div class="fix-num">Fix 3</div><div class="fix-title" style="color:#a855f7">소셜 속도 로그 스케일</div><div class="fix-desc">로그 스케일로 500~5000% 차별화</div></div>
+    <div class="fix-card"><div class="fix-num">Fix 4</div><div class="fix-title" style="color:#3b82f6">CTB 추정식 개선</div><div class="fix-desc">SI×1.8 + DTC×3.2 (다변수)</div></div>
+    <div class="fix-card"><div class="fix-num">Fix 5</div><div class="fix-title" style="color:#00ff9d">상장폐지 종목 제거</div><div class="fix-desc">BBBY, SIVB, FRC, SI 등 자동 제외</div></div>
+    <div class="fix-card"><div class="fix-num">Fix 6</div><div class="fix-title" style="color:#eab308">알림 중복 방지</div><div class="fix-desc">종목당 30분 쿨다운</div></div>
+    <div class="fix-card"><div class="fix-num">Fix 7</div><div class="fix-title" style="color:#06b6d4">장중 여부 체크</div><div class="fix-desc">ET 9:30~16:00 장중에만 갱신</div></div>
+    <div class="fix-card"><div class="fix-num">Fix 8</div><div class="fix-title" style="color:#10b981">히스토리 8시간치</div><div class="fix-desc">1000개 = 약 8시간치</div></div>
+    <div class="fix-card"><div class="fix-num">Fix 9</div><div class="fix-title" style="color:#f43f5e">새로고침 빈화면 방지</div><div class="fix-desc">/api/snapshot REST fallback</div></div>
+    <div class="fix-card"><div class="fix-num">Fix 10</div><div class="fix-title" style="color:#8b5cf6">모바일 드롭다운</div><div class="fix-desc">640px 이하 자동 드롭다운</div></div>
   </div>
 </div>
 
@@ -257,22 +257,23 @@ footer{text-align:center;padding:16px;font-size:.63rem;color:#1a1a30;border-top:
 </div>
 
 <div class="pg" id="pg-accumulation">
-  <h2 style="margin-bottom:6px;color:#ff4444;font-family:'Space Mono',monospace">🎯 매집 신호 탐지</h2>
+  <h2 style="margin-bottom:6px;color:#ff4444;font-family:'Space Mono',monospace">🎯 매집 신호 (Wyckoff + OBV + CMF)</h2>
   <p style="font-size:.76rem;color:var(--mu);margin-bottom:12px;line-height:1.7">
-    <b style="color:#ffd000">거래량 급등 + 주가 소폭 상승</b> = 세력이 조용히 사모으는 신호<br>
-    페니스탁 중 거래량이 평균 2배↑인데 주가는 5% 미만으로 움직인 종목
+    월스트리트 <b style="color:#ffd000">Wyckoff 매집 단계</b> + <b style="color:var(--ac)">OBV(누적거래량)</b> + <b style="color:#ff8800">CMF(자금흐름)</b> 다중 검증<br>
+    <span style="color:#ff2255">🔥 STRONG (75↑)</span> · <span style="color:#ff8800">⚡ ACTIVE (60~74)</span> · <span style="color:#ffd000">👀 EMERGING (45~59)</span>
   </p>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:14px" id="accStats"></div>
   <div class="tw">
     <table>
       <thead><tr>
         <th>심볼</th>
-        <th>매집비율 ⇅</th>
-        <th>거래량 배수</th>
-        <th>주가변동</th>
+        <th>매집점수</th>
+        <th>매집 시그널</th>
+        <th>OBV 추세</th>
+        <th>CMF</th>
+        <th>거래량 폭증일</th>
+        <th>등락</th>
         <th>현재가</th>
-        <th>SQS</th>
-        <th>등급</th>
         <th>테마</th>
       </tr></thead>
       <tbody id="accBody"></tbody>
@@ -290,7 +291,7 @@ footer{text-align:center;padding:16px;font-size:.63rem;color:#1a1a30;border-top:
   <h2 style="margin-bottom:7px;color:var(--ac);font-family:'Space Mono',monospace">SQS v3 방법론</h2>
   <p style="color:var(--mu);font-size:.78rem;margin-bottom:16px;line-height:1.7">
     SQS(Squeeze Score) v3는 Polygon API 기반 동적 데이터 + 10가지 개선 점수식으로<br>
-    미국 전체 상장 종목 7000+개에 대해 30초마다 자동 갱신됩니다.
+    미국 전체 상장 종목 6500+개에 대해 30초마다 자동 갱신됩니다.
   </p>
   <div class="tw" style="margin-bottom:16px">
     <table class="mt2">
@@ -306,17 +307,31 @@ footer{text-align:center;padding:16px;font-size:.63rem;color:#1a1a30;border-top:
         <tr><td>52주 고점 거리</td><td style="color:var(--ac);font-family:'Space Mono',monospace">5</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">dist×5</td><td><span class="dsrc real">Polygon Aggs</span></td></tr>
         <tr><td>RSI 다이버전스</td><td style="color:var(--ac);font-family:'Space Mono',monospace">3</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">30~50→+3 / 70↑→-2</td><td><span class="dsrc real">Polygon RSI</span></td></tr>
         <tr><td>MACD 모멘텀</td><td style="color:var(--ac);font-family:'Space Mono',monospace">5</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">골든크로스+5 / 데드크로스-3</td><td><span class="dsrc real">Polygon MACD</span></td></tr>
-        <tr><td>매집 신호</td><td style="color:var(--ac);font-family:'Space Mono',monospace">6</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">거래량↑ + 주가↓ → 누적</td><td><span class="dsrc real">Polygon</span></td></tr>
+        <tr><td>매집 신호 (Wyckoff)</td><td style="color:#ff4444;font-family:'Space Mono',monospace">8</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">OBV+CMF+Spring+캔들 → 100점 × 0.08</td><td><span class="dsrc real">Polygon Aggs</span></td></tr>
         <tr><td>소셜 속도 24h</td><td style="color:var(--ac);font-family:'Space Mono',monospace">8</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">≤500 선형 / >500 로그</td><td><span class="dsrc real">Apewisdom</span></td></tr>
         <tr><td>투자자 심리</td><td style="color:var(--ac);font-family:'Space Mono',monospace">4</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">max(0,sent)×4</td><td><span class="dsrc real">Apewisdom</span></td></tr>
         <tr><td>카탈리스트 D−7</td><td style="color:var(--ac);font-family:'Space Mono',monospace">4</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">bool?4:0</td><td><span class="dsrc real">Polygon News</span></td></tr>
       </tbody>
     </table>
   </div>
+  <h3 style="margin:20px 0 8px;color:#ff4444;font-family:'Space Mono',monospace;font-size:.9rem">🎯 매집 신호 세부 산식</h3>
+  <div class="tw">
+    <table class="mt2">
+      <thead><tr><th>지표</th><th>가중치</th><th>산식</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td>OBV 추세</td><td style="color:var(--ac)">25</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">20일 기울기 > 10% → +25</td><td>누적 매집 거래량</td></tr>
+        <tr><td>CMF (20일)</td><td style="color:var(--ac)">20</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">+0.15↑ → +20 / -0.1↓ → -5</td><td>자금흐름 강도</td></tr>
+        <tr><td>거래량 폭증일</td><td style="color:var(--ac)">15</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">10일 중 평균2배 일수 ≥5 → +15</td><td>지속적 매집</td></tr>
+        <tr><td>가격 안정+거래량</td><td style="color:var(--ac)">15</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">ATR<3% + 거래량↑ → +15</td><td>횡보 중 매집</td></tr>
+        <tr><td>Wyckoff Spring</td><td style="color:var(--ac)">15</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">신저가 후 즉시 회복+거래량폭증</td><td>매집 막바지</td></tr>
+        <tr><td>매집 캔들 비율</td><td style="color:var(--ac)">10</td><td style="font-family:'Space Mono',monospace;font-size:.65rem">종가 상단60%+거래량↑ → 70%↑</td><td>세력 매수 의지</td></tr>
+      </tbody>
+    </table>
+  </div>
   <p style="font-size:.65rem;color:#1a1a30;text-align:center;margin-top:16px">⚠️ 교육 목적 전용 | 투자 자문 아님</p>
 </div>
 
-<footer>⚠️ 교육 목적 전용 | 투자 자문 아님 | Not investment advice | v3 Modular Edition</footer>
+<footer>⚠️ 교육 목적 전용 | 투자 자문 아님 | Not investment advice | v3 Wyckoff Edition</footer>
 
 <script>
 let all={}, sortK='score', sortD=true, gfil='ALL', themeFil='', detChart=null, curPage=1;
@@ -539,7 +554,7 @@ async function rd(sym){
     {k:'vol_spike_score',l:'거래량 급등',max:5},{k:'dist_52w_score',l:'52주 고점',max:5},
     {k:'rsi_score',l:'RSI 다이버전스',max:3},{k:'macd_score',l:'MACD 모멘텀',max:5},
     {k:'social_score',l:'소셜 속도',max:8},{k:'sentiment_score',l:'투자자 심리',max:4},
-    {k:'catalyst_score',l:'카탈리스트',max:4},{k:'accumulation_score',l:'매집 신호',max:6},
+    {k:'catalyst_score',l:'카탈리스트',max:4},{k:'accumulation_score',l:'매집 신호',max:8},
   ];
   document.getElementById('detC').innerHTML=`
     <div class="dh">
@@ -550,6 +565,7 @@ async function rd(sym){
           ${bdg(g)}
           <span class="ttag" style="background:${tcolor}20;color:${tcolor};border:1px solid ${tcolor}40;padding:2px 7px;font-size:.65rem;border-radius:3px">${st.theme||'기타'}</span>
           ${st.has_catalyst?'<span class="ttag" style="background:rgba(255,208,0,.15);color:#ffd000;border:1px solid rgba(255,208,0,.3);padding:2px 7px;font-size:.65rem;border-radius:3px">⚡ 카탈리스트</span>':''}
+          ${(st.acc_score||0)>=60?`<span class="ttag" style="background:rgba(255,68,68,.15);color:#ff4444;border:1px solid rgba(255,68,68,.3);padding:2px 7px;font-size:.65rem;border-radius:3px">🎯 매집신호 ${st.acc_score}</span>`:''}
         </div>
       </div>
       <div style="margin-left:auto;text-align:right">
@@ -599,34 +615,47 @@ async function rd(sym){
 }
 
 async function racc(){
-  const data = await fetch('/api/accumulation?limit=100').then(r=>r.json()).catch(()=>[]);
+  const data = await fetch('/api/accumulation?limit=100&min_score=40').then(r=>r.json()).catch(()=>[]);
   const tb = document.getElementById('accBody');
   const em = document.getElementById('accEmp');
   const st = document.getElementById('accStats');
   if(!data.length){ tb.innerHTML=''; em.style.display=''; return; }
   em.style.display='none';
   const tcolor={};TD.forEach(t=>tcolor[t.id]=t.color);
-  const avg_vs = (data.reduce((a,r)=>a+r.vol_spike,0)/data.length).toFixed(1);
-  const avg_pc = (data.reduce((a,r)=>a+Math.abs(r.change_pct||0),0)/data.length).toFixed(1);
+  
+  const strong = data.filter(d=>d.acc_tier==='STRONG').length;
+  const active = data.filter(d=>d.acc_tier==='ACTIVE').length;
+  const emerging = data.filter(d=>d.acc_tier==='EMERGING').length;
+  const avg_score = (data.reduce((a,r)=>a+(r.acc_score||0),0)/data.length).toFixed(1);
+  
   st.innerHTML=`
-    <div class="sc"><div class="sl">매집 종목수</div><div class="sv" style="color:#ff4444">${data.length}</div></div>
-    <div class="sc"><div class="sl">평균 거래량배수</div><div class="sv" style="color:#ffd000">${avg_vs}x</div></div>
-    <div class="sc"><div class="sl">평균 주가변동</div><div class="sv" style="color:var(--ac)">${avg_pc}%</div></div>
+    <div class="sc"><div class="sl">🔥 강력매집</div><div class="sv" style="color:#ff2255">${strong}</div></div>
+    <div class="sc"><div class="sl">⚡ 활발매집</div><div class="sv" style="color:#ff8800">${active}</div></div>
+    <div class="sc"><div class="sl">👀 신호발생</div><div class="sv" style="color:#ffd000">${emerging}</div></div>
+    <div class="sc"><div class="sl">평균 점수</div><div class="sv" style="color:var(--ac)">${avg_score}</div></div>
   `;
+  
+  const tierColor={STRONG:'#ff2255',ACTIVE:'#ff8800',EMERGING:'#ffd000',WEAK:'#8888dd'};
+  const tierKR={STRONG:'🔥강력',ACTIVE:'⚡활발',EMERGING:'👀신호',WEAK:'💤약'};
+  
   tb.innerHTML = data.map(r=>{
     const tc = tcolor[r.theme||'']||'#3a3a58';
+    const tier_c = tierColor[r.acc_tier]||'#8888dd';
     const chH = (r.change_pct||0)>=0
       ? `<span class="dp">▲${f(r.change_pct,2)}%</span>`
       : `<span class="dn">▼${f(Math.abs(r.change_pct),2)}%</span>`;
     return`<tr onclick="pg('detail','${r.symbol}')" style="cursor:pointer">
       <td><span class="sym">${r.symbol}</span><div style="font-size:.58rem;color:var(--mu)">${r.name||''}</div></td>
-      <td><span style="font-family:'Space Mono',monospace;color:#ff4444;font-weight:700;font-size:.9rem">${f(r.acc_ratio,1)}</span>
-          <div style="font-size:.6rem;color:var(--mu)">거래량÷주가변동</div></td>
-      <td><span style="font-family:'Space Mono',monospace;color:#ffd000">${f(r.vol_spike,1)}x</span></td>
+      <td>
+        <span style="font-family:'Space Mono',monospace;color:${tier_c};font-weight:700;font-size:1rem">${f(r.acc_score,0)}</span>
+        <div style="font-size:.58rem;color:${tier_c};font-weight:700">${tierKR[r.acc_tier]||''}</div>
+      </td>
+      <td style="font-size:.66rem;color:var(--mu);max-width:240px;white-space:normal;line-height:1.4">${r.acc_summary||'—'}</td>
+      <td><span style="font-family:'Space Mono',monospace;color:${(r.obv_slope||0)>0.1?'var(--ac)':(r.obv_slope||0)>0?'#ffd000':'var(--mu)'}">${((r.obv_slope||0)*100).toFixed(1)}%</span></td>
+      <td><span style="font-family:'Space Mono',monospace;color:${(r.cmf||0)>0.15?'var(--ac)':(r.cmf||0)>0?'#ffd000':'#ff8800'}">${f(r.cmf,2)}</span></td>
+      <td><span style="font-family:'Space Mono',monospace;color:#ffd000">${r.vol_spike_days||0}일</span></td>
       <td>${chH}</td>
       <td><span style="font-family:'Space Mono',monospace">$${f(r.price)}</span></td>
-      <td><span style="font-family:'Space Mono',monospace;color:${sc(r.score||0)}">${f(r.score,1)}</span></td>
-      <td>${bdg(r.grade||'NO_SQUEEZE')}</td>
       <td><span class="ttag" style="background:${tc}20;color:${tc};border:1px solid ${tc}40">${(r.theme||'기타').split(' ').slice(0,2).join(' ')}</span></td>
     </tr>`;
   }).join('');
