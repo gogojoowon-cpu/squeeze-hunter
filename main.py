@@ -1,35 +1,100 @@
 """
-🔥 숏 스퀴즈 헌터 MEGA v3 — 모듈화 + 동적 티커 수집
+Short Squeeze Hunter v3 - FastAPI 진입점
+- 백그라운드 데이터 로딩
+- 30초 폴링 + Polygon WebSocket 실시간 스트리밍
+- 클라이언트 WebSocket 푸시
 """
+import asyncio
+import threading
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-import asyncio, threading
 
-from app.api.routes import register_routes
+from app import state
+from app.config import WS_ENABLED
 from app.pipeline.loader import init_data
-from app.pipeline.enricher import tick_loop
-from app.api.routes import push_loop
+from app.pipeline.enricher import enrich_all, start_tick_thread
+from app.api.routes import register_routes, push_loop
 
-app = FastAPI(title="ShortSqueezeHunter-v3")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+
+# ============================================================
+# 백그라운드 초기화 (별도 스레드)
+# ============================================================
+def _bootstrap():
+    """기동 시 1회: 티커 수집 → 가격 → 보강 → 점수"""
+    try:
+        print("=" * 60)
+        print("🚀 Short Squeeze Hunter v3 부팅")
+        print("=" * 60)
+
+        # 1) 티커 + 기본 데이터 로딩
+        init_data()
+
+        # 2) 상세 보강 (SI, SV, Float, MACD, 옵션, 펀더멘털, 뉴스, 이벤트)
+        enrich_all()
+
+        # 3) Tick 루프 시작 (5초 간격)
+        start_tick_thread()
+
+        # 4) Polygon WebSocket 시작 (실시간 가격 스트리밍)
+        if WS_ENABLED:
+            try:
+                from app.providers.polygon_ws import start_ws_thread
+                start_ws_thread()
+                print("✅ Polygon WebSocket 시작")
+            except Exception as e:
+                print(f"⚠️ WebSocket 시작 실패 (폴링으로 대체): {e}")
+
+        print("=" * 60)
+        print("✅ 부팅 완료 - 서비스 준비됨")
+        print("=" * 60)
+    except Exception as e:
+        print(f"❌ 부팅 실패: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+# ============================================================
+# FastAPI Lifespan
+# ============================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 시작: 백그라운드 부팅 스레드 + 클라이언트 푸시 루프
+    t = threading.Thread(target=_bootstrap, daemon=True)
+    t.start()
+
+    push_task = asyncio.create_task(push_loop())
+
+    yield
+
+    # 종료
+    push_task.cancel()
+    try:
+        await push_task
+    except asyncio.CancelledError:
+        pass
+
+
+# ============================================================
+# FastAPI 인스턴스
+# ============================================================
+app = FastAPI(
+    title="Short Squeeze Hunter",
+    version="3.0",
+    lifespan=lifespan,
 )
 
+# 라우트 등록
 register_routes(app)
 
 
-@app.on_event("startup")
-async def on_startup():
-    # 백그라운드 데이터 로딩
-    threading.Thread(target=init_data, daemon=True).start()
-    # 30초마다 가격/소셜 갱신
-    threading.Thread(target=tick_loop, daemon=True).start()
-    # WebSocket 푸시 루프
-    asyncio.create_task(push_loop())
-
-
-if __name__ == "__main__":
-    import uvicorn, os
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+# ============================================================
+# 헬스체크 (Railway용)
+# ============================================================
+@app.get("/health")
+def health():
+    return {
+        "status": "ok" if state.ready else "loading",
+        "loaded": len(state.stocks),
+        "ws_connected": state.ws_connected,
+    }
