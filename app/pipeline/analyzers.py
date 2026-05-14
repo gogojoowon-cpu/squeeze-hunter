@@ -47,14 +47,6 @@ def _push_alert(sym, alert_type, msg, level="info", data=None):
     if len(state.alerts) > 500:
         del state.alerts[:-500]
 
-    # Discord 알림 (high/critical 만)
-    if level in ("high", "critical"):
-        try:
-            from app.notifications.discord import send_discord
-            send_discord(alert)
-        except Exception:
-            pass
-
 
 # ============================================================
 # 이상거래 탐지
