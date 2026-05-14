@@ -1,9 +1,11 @@
 """
 데이터 보강 + 점수 재계산 파이프라인
-- Dirty-flag 기반 부분 재계산 (전체 재계산 X)
+- Dirty-flag 기반 부분 재계산
 - 우선순위 큐: 상위 500 (30초) / 중위 2000 (5분) / 나머지 (30분)
 - 데이터별 차등 갱신 주기
+- VERBOSE_LOGS=true 환경변수로 주기 갱신 로그 ON/OFF
 """
+import os
 import time
 import threading
 from datetime import datetime, timezone
@@ -20,30 +22,42 @@ from app.scoring import sqs, grade
 from app.providers import polygon, social
 from app.pipeline.analyzers import detect_anomalies, check_event_alerts
 
+# ============================================================
+# 로그 제어 (환경변수)
+# ============================================================
+VERBOSE = os.getenv("VERBOSE_LOGS", "false").lower() in ("true", "1", "yes")
+
+def _log(msg):
+    """verbose 모드에서만 출력 (주기 갱신 로그용)"""
+    if VERBOSE:
+        print(msg)
+
 # 마지막 갱신 시각 추적
 _last = {
-    "grouped": 0,        # 가격/거래량 (30초)
-    "social": 0,         # 소셜 (5분)
-    "aggs_top": 0,       # 상위 일봉/매집 (5분)
-    "aggs_mid": 0,       # 중위 일봉/매집 (30분)
-    "macd": 0,           # MACD (30분)
-    "news": 0,           # 뉴스 (10분)
-    "options": 0,        # 옵션 체인 (15분)
-    "si": 0,             # Short Interest (1일)
-    "sv": 0,             # Short Volume (1일)
-    "float": 0,          # Float (1일)
-    "fundamentals": 0,   # 펀더멘털 (1일)
-    "events": 0,         # 기업 이벤트 (1일)
+    "grouped": 0,
+    "social": 0,
+    "aggs_top": 0,
+    "aggs_mid": 0,
+    "macd": 0,
+    "news": 0,
+    "options": 0,
+    "si": 0,
+    "sv": 0,
+    "float": 0,
+    "fundamentals": 0,
+    "events": 0,
     "rescore_top": 0,
     "rescore_mid": 0,
     "rescore_low": 0,
+    "anomaly": 0,
 }
+
 
 # ============================================================
 # 초기 데이터 보강 (최초 1회)
 # ============================================================
 def enrich_all():
-    """기동 시 모든 종목에 대해 1회 보강"""
+    """기동 시 1회: 모든 종목에 대해 보강"""
     print("🔄 [5/5] 데이터 보강 시작...")
 
     syms = list(state.stocks.keys())
@@ -121,7 +135,7 @@ def enrich_all():
             news_cnt += 1
     print(f"  ✅ 뉴스 {news_cnt}개")
 
-    # 7) 옵션 체인 (상위 200 - Starter 플랜)
+    # 7) 옵션 체인 (상위 200)
     print("  📊 옵션 체인 (상위 200개)...")
     opt_syms = _get_priority_symbols(200)
     opt_cnt = 0
@@ -149,7 +163,7 @@ def enrich_all():
             pass
     print(f"  ✅ 펀더멘털 {fund_cnt}개")
 
-    # 9) 기업 이벤트 (배당/분할)
+    # 9) 기업 이벤트
     print("  📊 기업 이벤트 수집...")
     try:
         divs = polygon.fetch_upcoming_dividends()
@@ -167,7 +181,7 @@ def enrich_all():
     except Exception as e:
         print(f"  ⚠️ 이벤트 수집 실패: {e}")
 
-    # 10) 전체 점수 계산 (1회만 전체)
+    # 10) 초기 점수 계산
     print("  📊 초기 점수 계산...")
     _rescore_all()
 
@@ -187,7 +201,7 @@ def enrich_all():
 # 우선순위 기반 심볼 선택
 # ============================================================
 def _get_priority_symbols(n):
-    """점수 + 거래량 기준 상위 N개"""
+    """점수 + 매집 + 거래량 기준 상위 N개"""
     items = []
     for sym, m in state.stocks.items():
         if m.get("price", 0) <= 0:
@@ -202,7 +216,7 @@ def _get_priority_symbols(n):
 
 
 # ============================================================
-# 점수 재계산 (Dirty-flag 기반)
+# 점수 재계산
 # ============================================================
 def _rescore_all():
     """전체 재계산 (초기 1회만 사용)"""
@@ -237,7 +251,6 @@ def _rescore_dirty():
             m["sqs_score"] = r["score"]
             m["grade"] = r["grade"]
             m["breakdown"] = r["breakdown"]
-            # 점수 히스토리 (변화량 큰 경우만)
             if abs(r["score"] - old) >= 1:
                 hist = state.history.setdefault(sym, [])
                 hist.append({"t": time.time(), "s": r["score"]})
@@ -250,7 +263,6 @@ def _rescore_dirty():
 
 
 def _mark_dirty(syms):
-    """심볼 목록을 dirty로 표시"""
     if isinstance(syms, str):
         state.dirty_symbols.add(syms)
     else:
@@ -269,12 +281,11 @@ def _refresh_grouped():
             if sym in state.stocks:
                 old_price = state.stocks[sym].get("price", 0)
                 state.stocks[sym].update(d)
-                # 가격 변동 1% 이상이면 dirty
                 new_price = d.get("price", 0)
                 if old_price > 0 and abs(new_price - old_price) / old_price > 0.01:
                     _mark_dirty(sym)
                 cnt += 1
-        print(f"🔄 [30초] 가격 갱신 {cnt}개")
+        _log(f"🔄 [30초] 가격 갱신 {cnt}개")
     except Exception as e:
         print(f"⚠️ 가격 갱신 실패: {e}")
 
@@ -289,13 +300,13 @@ def _refresh_social():
                 state.stocks[sym].update(d)
                 _mark_dirty(sym)
                 cnt += 1
-        print(f"🔄 [5분] 소셜 갱신 {cnt}개")
+        _log(f"🔄 [5분] 소셜 갱신 {cnt}개")
     except Exception as e:
         print(f"⚠️ 소셜 갱신 실패: {e}")
 
 
 def _refresh_aggs_top():
-    """상위 종목 일봉/매집 갱신 (5분)"""
+    """상위 일봉/매집 갱신 (5분)"""
     try:
         syms = _get_priority_symbols(TOP_N_SYMBOLS)
         cnt = 0
@@ -308,13 +319,13 @@ def _refresh_aggs_top():
                     cnt += 1
             except Exception:
                 pass
-        print(f"🔄 [5분] 상위 일봉/매집 {cnt}개")
+        _log(f"🔄 [5분] 상위 일봉/매집 {cnt}개")
     except Exception as e:
         print(f"⚠️ 일봉 갱신 실패: {e}")
 
 
 def _refresh_aggs_mid():
-    """중위 종목 일봉 갱신 (30분)"""
+    """중위 일봉 갱신 (30분)"""
     try:
         all_top = set(_get_priority_symbols(TOP_N_SYMBOLS))
         mid = [s for s in _get_priority_symbols(MID_N_SYMBOLS) if s not in all_top]
@@ -328,13 +339,13 @@ def _refresh_aggs_mid():
                     cnt += 1
             except Exception:
                 pass
-        print(f"🔄 [30분] 중위 일봉 {cnt}개")
+        _log(f"🔄 [30분] 중위 일봉 {cnt}개")
     except Exception as e:
         print(f"⚠️ 중위 일봉 실패: {e}")
 
 
 def _refresh_macd():
-    """MACD 갱신 (30분, 상위 300개)"""
+    """MACD 갱신 (30분, 상위 300)"""
     try:
         syms = _get_priority_symbols(300)
         cnt = 0
@@ -347,7 +358,7 @@ def _refresh_macd():
                     cnt += 1
             except Exception:
                 pass
-        print(f"🔄 [30분] MACD {cnt}개")
+        _log(f"🔄 [30분] MACD {cnt}개")
     except Exception as e:
         print(f"⚠️ MACD 실패: {e}")
 
@@ -361,11 +372,10 @@ def _refresh_news():
             if sym in state.stocks:
                 old_cat = state.stocks[sym].get("has_catalyst", False)
                 state.stocks[sym].update(d)
-                # 촉매 새로 생기면 dirty
                 if d.get("has_catalyst") and not old_cat:
                     _mark_dirty(sym)
                 cnt += 1
-        print(f"🔄 [10분] 뉴스 {cnt}개")
+        _log(f"🔄 [10분] 뉴스 {cnt}개")
     except Exception as e:
         print(f"⚠️ 뉴스 실패: {e}")
 
@@ -384,7 +394,7 @@ def _refresh_options():
                     cnt += 1
             except Exception:
                 pass
-        print(f"🔄 [15분] 옵션 체인 {cnt}개")
+        _log(f"🔄 [15분] 옵션 체인 {cnt}개")
     except Exception as e:
         print(f"⚠️ 옵션 실패: {e}")
 
@@ -399,7 +409,7 @@ def _refresh_si():
                 state.stocks[sym].update(d)
                 _mark_dirty(sym)
                 cnt += 1
-        print(f"🔄 [1일] SI {cnt}개")
+        _log(f"🔄 [1일] SI {cnt}개")
     except Exception as e:
         print(f"⚠️ SI 실패: {e}")
 
@@ -414,7 +424,7 @@ def _refresh_sv():
                 state.stocks[sym].update(d)
                 _mark_dirty(sym)
                 cnt += 1
-        print(f"🔄 [1일] SV/DarkPool {cnt}개")
+        _log(f"🔄 [1일] SV/DarkPool {cnt}개")
     except Exception as e:
         print(f"⚠️ SV 실패: {e}")
 
@@ -429,7 +439,7 @@ def _refresh_float():
                 state.stocks[sym].update(d)
                 _mark_dirty(sym)
                 cnt += 1
-        print(f"🔄 [1일] Float {cnt}개")
+        _log(f"🔄 [1일] Float {cnt}개")
     except Exception as e:
         print(f"⚠️ Float 실패: {e}")
 
@@ -448,7 +458,7 @@ def _refresh_fundamentals():
                     cnt += 1
             except Exception:
                 pass
-        print(f"🔄 [1일] 펀더멘털 {cnt}개")
+        _log(f"🔄 [1일] 펀더멘털 {cnt}개")
     except Exception as e:
         print(f"⚠️ 펀더멘털 실패: {e}")
 
@@ -467,7 +477,7 @@ def _refresh_events():
             if sym in state.stocks:
                 state.stocks[sym]["upcoming_split"] = d
                 cnt += 1
-        print(f"🔄 [1일] 이벤트 {cnt}개")
+        _log(f"🔄 [1일] 이벤트 {cnt}개")
     except Exception as e:
         print(f"⚠️ 이벤트 실패: {e}")
 
@@ -479,7 +489,7 @@ def tick_once():
     """매 5초마다 호출 - 시간 경과별 작업 실행"""
     now = time.time()
 
-    # 30초: 가격 (Polygon WebSocket 없을 때만 - WS 켜져있으면 스킵)
+    # 30초: 가격 (WebSocket 켜져 있으면 스킵)
     if now - _last["grouped"] > 30 and not state.ws_connected:
         _refresh_grouped()
         _last["grouped"] = now
@@ -499,7 +509,7 @@ def tick_once():
         _refresh_news()
         _last["news"] = now
 
-    # 15분: 옵션 체인 (Starter 플랜)
+    # 15분: 옵션 체인
     if now - _last["options"] > 900:
         _refresh_options()
         _last["options"] = now
@@ -531,16 +541,15 @@ def tick_once():
         _refresh_events()
         _last["events"] = now
 
-    # ===== 점수 재계산 (Dirty-flag) =====
-    # 30초마다: dirty 된 것만
+    # 점수 재계산 (Dirty-flag, 30초)
     if now - _last["rescore_top"] > RESCORE_TOP_INTERVAL:
         n = _rescore_dirty()
         if n > 0:
-            print(f"🎯 [재계산] {n}개")
+            _log(f"🎯 [재계산] {n}개")
         _last["rescore_top"] = now
 
     # 이상거래 탐지 (5분)
-    if now - _last.get("anomaly", 0) > 300:
+    if now - _last["anomaly"] > 300:
         try:
             detect_anomalies()
         except Exception as e:
