@@ -11,7 +11,7 @@ import random
 from datetime import datetime, timezone, timedelta
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 
 from app import state
 from app.scoring import sqs
@@ -36,7 +36,6 @@ async def _remove_client(ws: WebSocket):
 
 
 async def broadcast(payload: dict):
-    """모든 연결된 클라이언트에 전송"""
     if not _clients:
         return
     msg = json.dumps(payload, default=str)
@@ -61,13 +60,11 @@ async def push_loop():
     while True:
         try:
             if state.ready and _clients:
-                # 점수 상위 + 최근 변동 종목 우선
                 items = []
                 top = sorted(
                     state.stocks.items(),
                     key=lambda x: -(x[1].get("sqs_score", 0) or 0),
                 )[:50]
-                # + 랜덤 샘플 30개
                 rest = [s for s in state.stocks.keys() if s not in dict(top)]
                 sample = random.sample(rest, min(30, len(rest))) if rest else []
 
@@ -80,11 +77,9 @@ async def push_loop():
 
                 await broadcast({"type": "update", "items": items, "t": time.time()})
 
-            # heartbeat (25초)
             if time.time() - last_hb > 25:
                 await broadcast({"type": "ping", "t": time.time()})
                 last_hb = time.time()
-
         except Exception as e:
             print(f"⚠️ push_loop 오류: {e}")
         await asyncio.sleep(4)
@@ -94,7 +89,6 @@ async def push_loop():
 # 행 빌더
 # ============================================================
 def _row(sym: str, m: dict) -> dict:
-    """스냅샷/푸시용 표준 행"""
     return {
         "symbol": sym,
         "name": m.get("name", ""),
@@ -130,16 +124,10 @@ def _row(sym: str, m: dict) -> dict:
 # ============================================================
 def register_routes(app: FastAPI):
 
-    # ----------------------------------------------------------
-    # 메인 페이지
-    # ----------------------------------------------------------
     @app.get("/", response_class=HTMLResponse)
     def index():
         return HTMLResponse(content=HTML_PAGE)
 
-    # ----------------------------------------------------------
-    # 초기 스냅샷 (페이지 로드 시 1회)
-    # ----------------------------------------------------------
     @app.get("/api/snapshot")
     def snapshot(limit: int = 500):
         items = []
@@ -156,9 +144,6 @@ def register_routes(app: FastAPI):
             "t": time.time(),
         }
 
-    # ----------------------------------------------------------
-    # 상위 점수
-    # ----------------------------------------------------------
     @app.get("/api/scores/top")
     def top_scores(limit: int = 100, min_score: float = 0, grade: str = ""):
         items = []
@@ -174,25 +159,18 @@ def register_routes(app: FastAPI):
         items.sort(key=lambda x: -(x.get("sqs_score") or 0))
         return {"count": len(items), "items": items[:limit]}
 
-    # ----------------------------------------------------------
-    # 점수 히스토리
-    # ----------------------------------------------------------
     @app.get("/api/scores/{symbol}/history")
     def score_history(symbol: str, limit: int = 100):
         sym = symbol.upper()
         hist = state.history.get(sym, [])
         return {"symbol": sym, "items": hist[-limit:]}
 
-    # ----------------------------------------------------------
-    # 점수 세부 (breakdown)
-    # ----------------------------------------------------------
     @app.get("/api/scores/{symbol}/breakdown")
     def score_breakdown(symbol: str):
         sym = symbol.upper()
         m = state.stocks.get(sym)
         if not m:
             return {"error": "not found"}
-        # 최신 계산
         r = sqs(m)
         return {
             "symbol": sym,
@@ -218,9 +196,6 @@ def register_routes(app: FastAPI):
             },
         }
 
-    # ----------------------------------------------------------
-    # 테마별 그룹
-    # ----------------------------------------------------------
     @app.get("/api/themes")
     def themes():
         groups = {}
@@ -242,9 +217,6 @@ def register_routes(app: FastAPI):
         result.sort(key=lambda x: -x["avg_score"])
         return {"themes": result}
 
-    # ----------------------------------------------------------
-    # 매집 신호
-    # ----------------------------------------------------------
     @app.get("/api/accumulation")
     def accumulation(limit: int = 100, min_score: float = 40):
         items = []
@@ -254,10 +226,8 @@ def register_routes(app: FastAPI):
                 continue
             if m.get("price", 0) <= 0:
                 continue
-            # 시총 100억 달러 이상 제외 (대형주는 매집 의미 약함)
             if (m.get("market_cap", 0) or 0) > 10_000_000_000:
                 continue
-
             tier = "WEAK"
             if acc >= 75:
                 tier = "STRONG"
@@ -265,7 +235,6 @@ def register_routes(app: FastAPI):
                 tier = "ACTIVE"
             elif acc >= 45:
                 tier = "EMERGING"
-
             items.append({
                 **_row(sym, m),
                 "acc_score": acc,
@@ -285,9 +254,6 @@ def register_routes(app: FastAPI):
         items.sort(key=lambda x: -x["acc_score"])
         return {"count": len(items), "items": items[:limit]}
 
-    # ----------------------------------------------------------
-    # 뉴스
-    # ----------------------------------------------------------
     @app.get("/api/news/{symbol}")
     def news(symbol: str, limit: int = 10):
         sym = symbol.upper()
@@ -299,22 +265,20 @@ def register_routes(app: FastAPI):
             "news": (m.get("news") or [])[:limit],
         }
 
-    # ----------------------------------------------------------
-    # 시장 상태
-    # ----------------------------------------------------------
     @app.get("/api/market")
     def market():
-        from app.market import is_market_open
+        from app.market import get_market_session, session_label_kr
+        session = get_market_session()
         return {
-            "is_open": is_market_open(),
+            "session": session,                            # pre | regular | after | closed
+            "label": session_label_kr(),                   # 한글 라벨
+            "is_open": session == "regular",
+            "is_active": session in ("pre", "regular", "after"),
             "t": time.time(),
             "ready": state.ready,
             "loaded": len(state.stocks),
         }
 
-    # ----------------------------------------------------------
-    # 이상거래 탐지 결과
-    # ----------------------------------------------------------
     @app.get("/api/anomalies")
     def get_anomalies(limit: int = 50, severity: str = ""):
         items = []
@@ -340,9 +304,6 @@ def register_routes(app: FastAPI):
         items.sort(key=lambda x: (sev_order.get(x["severity"], 9), -x["sqs_score"]))
         return {"count": len(items), "items": items[:limit]}
 
-    # ----------------------------------------------------------
-    # 다가오는 기업 이벤트 (어닝/배당/분할)
-    # ----------------------------------------------------------
     @app.get("/api/events")
     def get_events(days: int = 7):
         now = datetime.now(timezone.utc)
@@ -360,7 +321,6 @@ def register_routes(app: FastAPI):
                 "grade": m.get("grade", ""),
             }
 
-            # 어닝
             edate = m.get("earnings_date")
             if edate:
                 try:
@@ -370,7 +330,6 @@ def register_routes(app: FastAPI):
                 except Exception:
                     pass
 
-            # 배당
             div = m.get("upcoming_dividend") or {}
             if div.get("ex_date"):
                 try:
@@ -385,7 +344,6 @@ def register_routes(app: FastAPI):
                 except Exception:
                     pass
 
-            # 분할
             sp = m.get("upcoming_split") or {}
             if sp.get("execution_date"):
                 try:
@@ -410,9 +368,6 @@ def register_routes(app: FastAPI):
             "total": len(earnings) + len(dividends) + len(splits),
         }
 
-    # ----------------------------------------------------------
-    # 옵션 체인 상세
-    # ----------------------------------------------------------
     @app.get("/api/options/{symbol}")
     def get_options(symbol: str):
         sym = symbol.upper()
@@ -441,9 +396,6 @@ def register_routes(app: FastAPI):
             ),
         }
 
-    # ----------------------------------------------------------
-    # 펀더멘털 데이터
-    # ----------------------------------------------------------
     @app.get("/api/fundamentals/{symbol}")
     def get_fundamentals(symbol: str):
         sym = symbol.upper()
@@ -479,9 +431,6 @@ def register_routes(app: FastAPI):
             "updated_at": m.get("fundamentals_updated_at"),
         }
 
-    # ----------------------------------------------------------
-    # 알림 목록
-    # ----------------------------------------------------------
     @app.get("/api/alerts")
     def get_alerts(limit: int = 100, level: str = ""):
         items = list(reversed(state.alerts))
@@ -489,9 +438,6 @@ def register_routes(app: FastAPI):
             items = [a for a in items if a.get("level") == level]
         return {"count": len(items), "items": items[:limit]}
 
-    # ----------------------------------------------------------
-    # 시스템 상태 + 데이터 커버리지 진단
-    # ----------------------------------------------------------
     @app.get("/api/status")
     def get_status():
         total = len(state.stocks) or 1
@@ -508,6 +454,7 @@ def register_routes(app: FastAPI):
             "gamma set":           sum(1 for v in state.stocks.values() if v.get("gamma_concentration", 0) > 0),
             "fundamentals set":    sum(1 for v in state.stocks.values() if v.get("debt_to_equity", 0) > 0),
             "dark_pool set":       sum(1 for v in state.stocks.values() if v.get("dark_pool_ratio", 0) > 0),
+            "short_volume set":    sum(1 for v in state.stocks.values() if v.get("short_volume", 0) > 0),
         }
         coverage_pct = {k: f"{v}/{total} ({v*100//total}%)" for k, v in coverage.items()}
 
@@ -531,15 +478,11 @@ def register_routes(app: FastAPI):
             "score_distribution": score_dist,
         }
 
-    # ----------------------------------------------------------
-    # WebSocket (클라이언트 → 서버 실시간 푸시)
-    # ----------------------------------------------------------
     @app.websocket("/ws/scores")
     async def ws_scores(ws: WebSocket):
         await ws.accept()
         await _add_client(ws)
         try:
-            # 초기 스냅샷 전송
             items = []
             for sym, m in state.stocks.items():
                 if m.get("price", 0) > 0:
@@ -551,7 +494,6 @@ def register_routes(app: FastAPI):
                 "t": time.time(),
             }, default=str))
 
-            # 클라이언트로부터 메시지 대기 (ping 등)
             while True:
                 data = await ws.receive_text()
                 if data == "ping":
