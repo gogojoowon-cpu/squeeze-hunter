@@ -1,7 +1,7 @@
 """
 환경 설정 + 상수
 - 환경변수: POLYGON_API_KEY (필수)
-- 옵션: WS_ENABLED, MIN_PRICE 등
+- 옵션: WS_ENABLED, MIN_PRICE, MIN_VOLUME 등
 """
 import os
 
@@ -18,17 +18,18 @@ WS_URL = "wss://socket.polygon.io/stocks"
 WS_TOP_N = int(os.getenv("WS_TOP_N", "500"))   # WebSocket 구독 상위 N개
 
 # ============================================================
-# 필터 설정
+# 필터 설정 (loader.py 가 사용)
 # ============================================================
-MIN_PRICE = float(os.getenv("MIN_PRICE", "0.5"))      # 최저가
-MAX_PRICE = float(os.getenv("MAX_PRICE", "1000"))     # 최고가
-MIN_VOLUME = int(os.getenv("MIN_VOLUME", "100000"))   # 최저 거래량
+MIN_PRICE = float(os.getenv("MIN_PRICE", "0.5"))                  # 최저 가격
+MAX_PRICE = float(os.getenv("MAX_PRICE", "1000"))                 # 최고 가격
+MIN_VOLUME = int(os.getenv("MIN_VOLUME", "100000"))               # 당일 최소 거래량
+MIN_AVG_VOLUME = int(os.getenv("MIN_AVG_VOLUME", "300000"))       # 20일 평균 최소 거래량
 
 # ============================================================
 # 우선순위 큐 (재계산 분배)
 # ============================================================
-TOP_N_SYMBOLS = 500       # 상위 (5분 주기)
-MID_N_SYMBOLS = 2000      # 중위 (30분 주기)
+TOP_N_SYMBOLS = 500            # 상위 (5분 주기)
+MID_N_SYMBOLS = 2000           # 중위 (30분 주기)
 RESCORE_TOP_INTERVAL = 30      # 30초마다 dirty 재계산
 RESCORE_MID_INTERVAL = 300     # 5분
 RESCORE_LOW_INTERVAL = 1800    # 30분
@@ -72,6 +73,9 @@ DELISTED_SYMBOLS = {
     # 필요시 추가
 }
 
+# 하위 호환 별칭 (loader.py 등 기존 코드에서 DELISTED 로 import)
+DELISTED = DELISTED_SYMBOLS
+
 # ============================================================
 # 섹터 한글 매핑
 # ============================================================
@@ -90,6 +94,6 @@ SECTOR_KR = {
 }
 
 # ============================================================
-# 테마 정의 (간략 — 실제 데이터는 themes.py 가 관리)
+# 기본 테마
 # ============================================================
 DEFAULT_THEME = "기타"
