@@ -1,340 +1,571 @@
-"""데이터 보강 + 주기적 다중 갱신"""
-import time, random
+"""
+데이터 보강 + 점수 재계산 파이프라인
+- Dirty-flag 기반 부분 재계산 (전체 재계산 X)
+- 우선순위 큐: 상위 500 (30초) / 중위 2000 (5분) / 나머지 (30분)
+- 데이터별 차등 갱신 주기
+"""
+import time
+import threading
 from datetime import datetime, timezone
-from app import state
-from app.config import ALERT_COOLDOWN_SEC, HISTORY_MAX
-from app.scoring import sqs, estimate_ctb
-from app.market import is_market_open
-from app.providers import polygon, social as social_provider
 
+from app import state
+from app.config import (
+    RESCORE_TOP_INTERVAL,
+    RESCORE_MID_INTERVAL,
+    RESCORE_LOW_INTERVAL,
+    TOP_N_SYMBOLS,
+    MID_N_SYMBOLS,
+)
+from app.scoring import sqs, grade
+from app.providers import polygon, social
+from app.pipeline.analyzers import detect_anomalies, check_event_alerts
 
 # 마지막 갱신 시각 추적
-_last_refresh = {
-    "aggs": 0,         # 일봉 + 매집 (장중 5분 주기)
-    "short_int": 0,    # SI/SV (1일 주기)
-    "float_data": 0,   # Float (1일 주기)
-    "macd": 0,         # MACD (장중 30분 주기)
-    "news": 0,         # 뉴스 (10분 주기)
+_last = {
+    "grouped": 0,        # 가격/거래량 (30초)
+    "social": 0,         # 소셜 (5분)
+    "aggs_top": 0,       # 상위 일봉/매집 (5분)
+    "aggs_mid": 0,       # 중위 일봉/매집 (30분)
+    "macd": 0,           # MACD (30분)
+    "news": 0,           # 뉴스 (10분)
+    "options": 0,        # 옵션 체인 (15분)
+    "si": 0,             # Short Interest (1일)
+    "sv": 0,             # Short Volume (1일)
+    "float": 0,          # Float (1일)
+    "fundamentals": 0,   # 펀더멘털 (1일)
+    "events": 0,         # 기업 이벤트 (1일)
+    "rescore_top": 0,
+    "rescore_mid": 0,
+    "rescore_low": 0,
 }
 
-
+# ============================================================
+# 초기 데이터 보강 (최초 1회)
+# ============================================================
 def enrich_all():
-    """초기 1회 보강 — 전체 데이터 수집"""
-    print("  📊 Short Interest...")
+    """기동 시 모든 종목에 대해 1회 보강"""
+    print("🔄 [5/5] 데이터 보강 시작...")
+
+    syms = list(state.stocks.keys())
+    if not syms:
+        print("⚠️ 보강할 종목 없음")
+        return
+
+    # 1) Short Interest
+    print("  📊 Short Interest 수집...")
     si_data = polygon.fetch_short_interest_batch()
+    si_cnt = 0
+    for sym, d in si_data.items():
+        if sym in state.stocks:
+            state.stocks[sym].update(d)
+            si_cnt += 1
+    print(f"  ✅ SI {si_cnt}개")
 
-    print("  📊 Short Volume...")
+    # 2) Short Volume + Dark Pool
+    print("  📊 Short Volume + Dark Pool 수집...")
     sv_data = polygon.fetch_short_volume_batch()
-
-    for sym, d in state.stocks.items():
-        if sym in si_data:
-            sd = si_data[sym]
-            d["si_pct"] = sd["si_pct"]
-            d["dtc"] = sd["dtc"]
-            d["si_shares"] = sd["si_shares"]
-            d["si_src"] = "polygon"
-            ctb_e, util_e = estimate_ctb(sd["si_pct"], sd["dtc"])
-            d["ctb"], d["util"] = ctb_e, util_e
-
-        if sym in sv_data:
-            svr = sv_data[sym]["short_vol_ratio"] * 100
-            d["short_vol_ratio"] = round(svr, 2)
-            if svr > 50:
-                d["ctb"] = round(d.get("ctb", 0) * 1.2, 1)
-
-        r = sqs(d)
-        d.update(r)
-
-    _last_refresh["short_int"] = time.time()
-
-    print("  📊 Float...")
-    float_data = polygon.fetch_float_batch()
-    for sym, fd in float_data.items():
+    sv_cnt = 0
+    for sym, d in sv_data.items():
         if sym in state.stocks:
-            d = state.stocks[sym]
-            d["float_shares"] = fd["free_float"]
-            d["free_float_pct"] = fd["free_float_pct"]
-            if sym in si_data and fd["free_float"] > 0:
-                si_sh = si_data[sym].get("si_shares", 0)
-                d["si_pct"] = round(si_sh / fd["free_float"] * 100, 2)
-            d["rotation"] = round(d["volume"] / max(fd["free_float"], 1), 5)
-            r = sqs(d)
-            d.update(r)
+            state.stocks[sym].update(d)
+            sv_cnt += 1
+    print(f"  ✅ SV {sv_cnt}개")
 
-    _last_refresh["float_data"] = time.time()
+    # 3) Float
+    print("  📊 Float 수집...")
+    fl_data = polygon.fetch_float_batch()
+    fl_cnt = 0
+    for sym, d in fl_data.items():
+        if sym in state.stocks:
+            state.stocks[sym].update(d)
+            fl_cnt += 1
+    print(f"  ✅ Float {fl_cnt}개")
 
-    top_syms = sorted(
-        [s for s in state.stocks],
-        key=lambda x: state.stocks[x].get("score", 0),
-        reverse=True,
-    )[:200]
-    print(f"  📊 MACD ({len(top_syms)}개)...")
-    macd_ok = 0
-    for sym in top_syms:
+    # 4) 일봉 + 매집 + 이상거래 (상위 1000개만 초기에)
+    print("  📊 일봉/매집/이상거래 분석 (상위 1000개)...")
+    top_syms = _get_priority_symbols(1000)
+    agg_cnt = 0
+    for i, sym in enumerate(top_syms):
         try:
-            macd = polygon.fetch_macd(sym)
-            if macd:
-                d = state.stocks[sym]
-                d["macd_golden_cross"] = macd.get("golden_cross", False)
-                d["macd_dead_cross"] = macd.get("dead_cross", False)
-                d["macd_histogram"] = macd.get("histogram", 0)
-                d["macd_value"] = macd.get("macd", 0)
-                d["macd_signal"] = macd.get("signal", 0)
-                r = sqs(d)
-                d.update(r)
-                macd_ok += 1
-            time.sleep(0.15)
+            d = polygon.fetch_aggs(sym)
+            if d and sym in state.stocks:
+                state.stocks[sym].update(d)
+                agg_cnt += 1
         except Exception:
             pass
-    print(f"  ✅ MACD: {macd_ok}개")
-    _last_refresh["macd"] = time.time()
+        if (i + 1) % 200 == 0:
+            print(f"    ✅ {i+1}/{len(top_syms)} 처리")
+    print(f"  ✅ 일봉 {agg_cnt}개")
 
-    print("  📰 뉴스...")
+    # 5) MACD (상위 300)
+    print("  📊 MACD (상위 300개)...")
+    macd_syms = _get_priority_symbols(300)
+    macd_cnt = 0
+    for sym in macd_syms:
+        try:
+            d = polygon.fetch_macd(sym)
+            if d and sym in state.stocks:
+                state.stocks[sym].update(d)
+                macd_cnt += 1
+        except Exception:
+            pass
+    print(f"  ✅ MACD {macd_cnt}개")
+
+    # 6) 뉴스
+    print("  📊 뉴스 + 촉매 수집...")
     news_data = polygon.fetch_news_batch(limit=1000)
-    for sym, nd in news_data.items():
+    news_cnt = 0
+    for sym, d in news_data.items():
         if sym in state.stocks:
-            d = state.stocks[sym]
-            d["has_catalyst"] = nd["has_catalyst"]
-            d["news_count"] = nd["news_count"]
-            d["news_sentiment"] = nd.get("sentiment_score", 0)
-            d["latest_news"] = nd["news_titles"][:3]
-            r = sqs(d)
-            d.update(r)
-    print(f"  ✅ 뉴스: {len(news_data)}개")
-    _last_refresh["news"] = time.time()
+            state.stocks[sym].update(d)
+            news_cnt += 1
+    print(f"  ✅ 뉴스 {news_cnt}개")
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 주기적 갱신 함수들
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-def refresh_aggs_for_top(n: int = 200):
-    """상위 종목 일봉/매집/RSI/52주 갱신 (장중 5분 주기)"""
-    if not is_market_open():
-        return 0
-
-    # SQS 점수 상위 + 매집 점수 상위 둘 다 갱신
-    by_sqs = sorted(state.stocks.keys(),
-                    key=lambda x: state.stocks[x].get("score", 0),
-                    reverse=True)[:n]
-    by_acc = sorted(state.stocks.keys(),
-                    key=lambda x: state.stocks[x].get("acc_score", 0),
-                    reverse=True)[:n]
-    targets = list(set(by_sqs + by_acc))[:n*2]
-
-    # 캐시 강제 무효화
-    for sym in targets:
-        state.aggs_cache.pop(sym, None)
-
-    updated = 0
-    for sym in targets:
+    # 7) 옵션 체인 (상위 200 - Starter 플랜)
+    print("  📊 옵션 체인 (상위 200개)...")
+    opt_syms = _get_priority_symbols(200)
+    opt_cnt = 0
+    for sym in opt_syms:
         try:
-            agg = polygon.fetch_aggs(sym)
-            if agg:
-                state.stocks[sym].update({
-                    "rsi14": agg.get("rsi14", 50),
-                    "high_52w": agg.get("high_52w", 0),
-                    "low_52w": agg.get("low_52w", 0),
-                    "dist_52w": agg.get("dist_52w", 0.5),
-                    "vol_spike": agg.get("vol_spike", 1),
-                    "acc_score": agg.get("acc_score", 0),
-                    "acc_signals": agg.get("acc_signals", []),
-                    "obv_slope": agg.get("obv_slope", 0),
-                    "cmf": agg.get("cmf", 0),
-                    "vol_spike_days": agg.get("vol_spike_days", 0),
-                    "spring_recovery": agg.get("spring_recovery", False),
-                    "near_support": agg.get("near_support", False),
-                })
-                r = sqs(state.stocks[sym])
-                state.stocks[sym].update(r)
-                updated += 1
-            time.sleep(0.1)
+            d = polygon.fetch_options_chain(sym)
+            if d and sym in state.stocks:
+                state.stocks[sym].update(d)
+                opt_cnt += 1
         except Exception:
             pass
-    return updated
+    print(f"  ✅ 옵션 {opt_cnt}개")
 
-
-def refresh_short_interest():
-    """SI/SV 전체 갱신 (1일 주기)"""
-    si_data = polygon.fetch_short_interest_batch()
-    sv_data = polygon.fetch_short_volume_batch()
-
-    for sym, d in state.stocks.items():
-        if sym in si_data:
-            sd = si_data[sym]
-            d["si_pct"] = sd["si_pct"]
-            d["dtc"] = sd["dtc"]
-            d["si_shares"] = sd["si_shares"]
-            ctb_e, util_e = estimate_ctb(sd["si_pct"], sd["dtc"])
-            d["ctb"], d["util"] = ctb_e, util_e
-
-        if sym in sv_data:
-            svr = sv_data[sym]["short_vol_ratio"] * 100
-            d["short_vol_ratio"] = round(svr, 2)
-
-        r = sqs(d)
-        d.update(r)
-
-    return len(si_data)
-
-
-def refresh_float():
-    """Float 전체 갱신 (1일 주기)"""
-    float_data = polygon.fetch_float_batch()
-    for sym, fd in float_data.items():
-        if sym in state.stocks:
-            d = state.stocks[sym]
-            d["float_shares"] = fd["free_float"]
-            d["free_float_pct"] = fd["free_float_pct"]
-            d["rotation"] = round(d.get("volume", 0) / max(fd["free_float"], 1), 5)
-            r = sqs(d)
-            d.update(r)
-    return len(float_data)
-
-
-def refresh_macd_top(n: int = 200):
-    """상위 종목 MACD 갱신 (30분 주기)"""
-    top = sorted(state.stocks.keys(),
-                 key=lambda x: state.stocks[x].get("score", 0),
-                 reverse=True)[:n]
-    ok = 0
-    for sym in top:
+    # 8) 펀더멘털 (상위 500)
+    print("  📊 펀더멘털 (상위 500개)...")
+    fund_syms = _get_priority_symbols(500)
+    fund_cnt = 0
+    for sym in fund_syms:
         try:
-            macd = polygon.fetch_macd(sym)
-            if macd:
-                d = state.stocks[sym]
-                d["macd_golden_cross"] = macd.get("golden_cross", False)
-                d["macd_dead_cross"] = macd.get("dead_cross", False)
-                d["macd_histogram"] = macd.get("histogram", 0)
-                d["macd_value"] = macd.get("macd", 0)
-                d["macd_signal"] = macd.get("signal", 0)
-                r = sqs(d)
-                d.update(r)
-                ok += 1
-            time.sleep(0.15)
+            d = polygon.fetch_fundamentals(sym)
+            if d and sym in state.stocks:
+                state.stocks[sym].update(d)
+                fund_cnt += 1
         except Exception:
             pass
-    return ok
+    print(f"  ✅ 펀더멘털 {fund_cnt}개")
+
+    # 9) 기업 이벤트 (배당/분할)
+    print("  📊 기업 이벤트 수집...")
+    try:
+        divs = polygon.fetch_upcoming_dividends()
+        splits = polygon.fetch_upcoming_splits()
+        ev_cnt = 0
+        for sym, d in divs.items():
+            if sym in state.stocks:
+                state.stocks[sym]["upcoming_dividend"] = d
+                ev_cnt += 1
+        for sym, d in splits.items():
+            if sym in state.stocks:
+                state.stocks[sym]["upcoming_split"] = d
+                ev_cnt += 1
+        print(f"  ✅ 이벤트 {ev_cnt}개")
+    except Exception as e:
+        print(f"  ⚠️ 이벤트 수집 실패: {e}")
+
+    # 10) 전체 점수 계산 (1회만 전체)
+    print("  📊 초기 점수 계산...")
+    _rescore_all()
+
+    # 11) 이상거래 탐지
+    print("  📊 이상거래 탐지...")
+    detect_anomalies()
+
+    now = time.time()
+    for k in _last:
+        _last[k] = now
+
+    state.ready = True
+    print("🏁 전체 완료!")
 
 
-def refresh_news():
-    """뉴스 갱신 (10분 주기)"""
-    news_data = polygon.fetch_news_batch(limit=1000)
+# ============================================================
+# 우선순위 기반 심볼 선택
+# ============================================================
+def _get_priority_symbols(n):
+    """점수 + 거래량 기준 상위 N개"""
+    items = []
+    for sym, m in state.stocks.items():
+        if m.get("price", 0) <= 0:
+            continue
+        score = m.get("sqs_score", 0) or 0
+        acc = m.get("acc_score", 0) or 0
+        vol = m.get("volume", 0) or 0
+        priority = score * 2 + acc + (vol / 1_000_000) * 0.5
+        items.append((sym, priority))
+    items.sort(key=lambda x: -x[1])
+    return [s for s, _ in items[:n]]
+
+
+# ============================================================
+# 점수 재계산 (Dirty-flag 기반)
+# ============================================================
+def _rescore_all():
+    """전체 재계산 (초기 1회만 사용)"""
     cnt = 0
-    for sym, nd in news_data.items():
-        if sym in state.stocks:
-            d = state.stocks[sym]
-            d["has_catalyst"] = nd["has_catalyst"]
-            d["news_count"] = nd["news_count"]
-            d["news_sentiment"] = nd.get("sentiment_score", 0)
-            d["latest_news"] = nd["news_titles"][:3]
-            r = sqs(d)
-            d.update(r)
+    for sym, m in state.stocks.items():
+        try:
+            r = sqs(m)
+            m["sqs_score"] = r["score"]
+            m["grade"] = r["grade"]
+            m["breakdown"] = r["breakdown"]
             cnt += 1
+        except Exception:
+            pass
+    state.dirty_symbols.clear()
+    print(f"    ✅ 전체 재계산 {cnt}개")
+
+
+def _rescore_dirty():
+    """Dirty-flag 된 종목만 재계산"""
+    if not state.dirty_symbols:
+        return 0
+    dirty = list(state.dirty_symbols)
+    state.dirty_symbols.clear()
+    cnt = 0
+    for sym in dirty:
+        m = state.stocks.get(sym)
+        if not m:
+            continue
+        try:
+            old = m.get("sqs_score", 0)
+            r = sqs(m)
+            m["sqs_score"] = r["score"]
+            m["grade"] = r["grade"]
+            m["breakdown"] = r["breakdown"]
+            # 점수 히스토리 (변화량 큰 경우만)
+            if abs(r["score"] - old) >= 1:
+                hist = state.history.setdefault(sym, [])
+                hist.append({"t": time.time(), "s": r["score"]})
+                if len(hist) > 200:
+                    del hist[:-200]
+            cnt += 1
+        except Exception:
+            pass
     return cnt
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 30초 주기 tick
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def _mark_dirty(syms):
+    """심볼 목록을 dirty로 표시"""
+    if isinstance(syms, str):
+        state.dirty_symbols.add(syms)
+    else:
+        state.dirty_symbols.update(syms)
 
-def tick_once():
-    """30초마다: 가격 + 소셜 + 점수 + 시간별 보강"""
-    if not state.ready or not state.stocks:
-        return
 
-    prev_grades = {s: state.stocks[s].get("grade", "NO_SQUEEZE") for s in state.stocks}
-
-    # 1) 가격 (장중에만, 100개 샘플)
-    if is_market_open():
-        sample = random.sample(list(state.stocks.keys()), min(100, len(state.stocks)))
-        snaps = polygon.fetch_snapshots(sample)
-        for sym, snap in snaps.items():
+# ============================================================
+# 주기적 갱신 함수들
+# ============================================================
+def _refresh_grouped():
+    """가격/거래량 갱신 (30초)"""
+    try:
+        data = polygon.fetch_grouped_daily()
+        cnt = 0
+        for sym, d in data.items():
             if sym in state.stocks:
-                state.stocks[sym].update(snap)
+                old_price = state.stocks[sym].get("price", 0)
+                state.stocks[sym].update(d)
+                # 가격 변동 1% 이상이면 dirty
+                new_price = d.get("price", 0)
+                if old_price > 0 and abs(new_price - old_price) / old_price > 0.01:
+                    _mark_dirty(sym)
+                cnt += 1
+        print(f"🔄 [30초] 가격 갱신 {cnt}개")
+    except Exception as e:
+        print(f"⚠️ 가격 갱신 실패: {e}")
 
-    # 2) 소셜 (Apewisdom 2분 캐시는 내부에 있음)
-    soc = social_provider.fetch_social()
-    for sym, sd in soc.items():
-        if sym in state.stocks:
-            d = state.stocks[sym]
-            d["social_velocity"] = float(sd.get("social_velocity", 0))
-            d["sentiment"] = float(sd.get("sentiment", 0))
-            d["mentions"] = int(sd.get("mentions", 0))
 
-    # 3) 시간별 보강 (장중 5분 주기 - 상위 종목 일봉/매집)
+def _refresh_social():
+    """소셜 갱신 (5분)"""
+    try:
+        data = social.fetch_social()
+        cnt = 0
+        for sym, d in data.items():
+            if sym in state.stocks:
+                state.stocks[sym].update(d)
+                _mark_dirty(sym)
+                cnt += 1
+        print(f"🔄 [5분] 소셜 갱신 {cnt}개")
+    except Exception as e:
+        print(f"⚠️ 소셜 갱신 실패: {e}")
+
+
+def _refresh_aggs_top():
+    """상위 종목 일봉/매집 갱신 (5분)"""
+    try:
+        syms = _get_priority_symbols(TOP_N_SYMBOLS)
+        cnt = 0
+        for sym in syms:
+            try:
+                d = polygon.fetch_aggs(sym)
+                if d and sym in state.stocks:
+                    state.stocks[sym].update(d)
+                    _mark_dirty(sym)
+                    cnt += 1
+            except Exception:
+                pass
+        print(f"🔄 [5분] 상위 일봉/매집 {cnt}개")
+    except Exception as e:
+        print(f"⚠️ 일봉 갱신 실패: {e}")
+
+
+def _refresh_aggs_mid():
+    """중위 종목 일봉 갱신 (30분)"""
+    try:
+        all_top = set(_get_priority_symbols(TOP_N_SYMBOLS))
+        mid = [s for s in _get_priority_symbols(MID_N_SYMBOLS) if s not in all_top]
+        cnt = 0
+        for sym in mid:
+            try:
+                d = polygon.fetch_aggs(sym)
+                if d and sym in state.stocks:
+                    state.stocks[sym].update(d)
+                    _mark_dirty(sym)
+                    cnt += 1
+            except Exception:
+                pass
+        print(f"🔄 [30분] 중위 일봉 {cnt}개")
+    except Exception as e:
+        print(f"⚠️ 중위 일봉 실패: {e}")
+
+
+def _refresh_macd():
+    """MACD 갱신 (30분, 상위 300개)"""
+    try:
+        syms = _get_priority_symbols(300)
+        cnt = 0
+        for sym in syms:
+            try:
+                d = polygon.fetch_macd(sym)
+                if d and sym in state.stocks:
+                    state.stocks[sym].update(d)
+                    _mark_dirty(sym)
+                    cnt += 1
+            except Exception:
+                pass
+        print(f"🔄 [30분] MACD {cnt}개")
+    except Exception as e:
+        print(f"⚠️ MACD 실패: {e}")
+
+
+def _refresh_news():
+    """뉴스 갱신 (10분)"""
+    try:
+        data = polygon.fetch_news_batch(limit=1000)
+        cnt = 0
+        for sym, d in data.items():
+            if sym in state.stocks:
+                old_cat = state.stocks[sym].get("has_catalyst", False)
+                state.stocks[sym].update(d)
+                # 촉매 새로 생기면 dirty
+                if d.get("has_catalyst") and not old_cat:
+                    _mark_dirty(sym)
+                cnt += 1
+        print(f"🔄 [10분] 뉴스 {cnt}개")
+    except Exception as e:
+        print(f"⚠️ 뉴스 실패: {e}")
+
+
+def _refresh_options():
+    """옵션 체인 갱신 (15분, 상위 200)"""
+    try:
+        syms = _get_priority_symbols(200)
+        cnt = 0
+        for sym in syms:
+            try:
+                d = polygon.fetch_options_chain(sym)
+                if d and sym in state.stocks:
+                    state.stocks[sym].update(d)
+                    _mark_dirty(sym)
+                    cnt += 1
+            except Exception:
+                pass
+        print(f"🔄 [15분] 옵션 체인 {cnt}개")
+    except Exception as e:
+        print(f"⚠️ 옵션 실패: {e}")
+
+
+def _refresh_si():
+    """Short Interest 갱신 (1일)"""
+    try:
+        data = polygon.fetch_short_interest_batch()
+        cnt = 0
+        for sym, d in data.items():
+            if sym in state.stocks:
+                state.stocks[sym].update(d)
+                _mark_dirty(sym)
+                cnt += 1
+        print(f"🔄 [1일] SI {cnt}개")
+    except Exception as e:
+        print(f"⚠️ SI 실패: {e}")
+
+
+def _refresh_sv():
+    """Short Volume + Dark Pool 갱신 (1일)"""
+    try:
+        data = polygon.fetch_short_volume_batch()
+        cnt = 0
+        for sym, d in data.items():
+            if sym in state.stocks:
+                state.stocks[sym].update(d)
+                _mark_dirty(sym)
+                cnt += 1
+        print(f"🔄 [1일] SV/DarkPool {cnt}개")
+    except Exception as e:
+        print(f"⚠️ SV 실패: {e}")
+
+
+def _refresh_float():
+    """Float 갱신 (1일)"""
+    try:
+        data = polygon.fetch_float_batch()
+        cnt = 0
+        for sym, d in data.items():
+            if sym in state.stocks:
+                state.stocks[sym].update(d)
+                _mark_dirty(sym)
+                cnt += 1
+        print(f"🔄 [1일] Float {cnt}개")
+    except Exception as e:
+        print(f"⚠️ Float 실패: {e}")
+
+
+def _refresh_fundamentals():
+    """펀더멘털 갱신 (1일, 상위 500)"""
+    try:
+        syms = _get_priority_symbols(500)
+        cnt = 0
+        for sym in syms:
+            try:
+                d = polygon.fetch_fundamentals(sym)
+                if d and sym in state.stocks:
+                    state.stocks[sym].update(d)
+                    _mark_dirty(sym)
+                    cnt += 1
+            except Exception:
+                pass
+        print(f"🔄 [1일] 펀더멘털 {cnt}개")
+    except Exception as e:
+        print(f"⚠️ 펀더멘털 실패: {e}")
+
+
+def _refresh_events():
+    """기업 이벤트 갱신 (1일)"""
+    try:
+        divs = polygon.fetch_upcoming_dividends()
+        splits = polygon.fetch_upcoming_splits()
+        cnt = 0
+        for sym, d in divs.items():
+            if sym in state.stocks:
+                state.stocks[sym]["upcoming_dividend"] = d
+                cnt += 1
+        for sym, d in splits.items():
+            if sym in state.stocks:
+                state.stocks[sym]["upcoming_split"] = d
+                cnt += 1
+        print(f"🔄 [1일] 이벤트 {cnt}개")
+    except Exception as e:
+        print(f"⚠️ 이벤트 실패: {e}")
+
+
+# ============================================================
+# 메인 틱 루프
+# ============================================================
+def tick_once():
+    """매 5초마다 호출 - 시간 경과별 작업 실행"""
     now = time.time()
-    if is_market_open() and now - _last_refresh["aggs"] > 300:
-        print("🔄 [5분 주기] 상위 종목 일봉/매집 갱신...")
-        n = refresh_aggs_for_top(200)
-        print(f"  ✅ {n}개 갱신 완료")
-        _last_refresh["aggs"] = now
 
-    # 4) MACD (장중 30분 주기)
-    if is_market_open() and now - _last_refresh["macd"] > 1800:
-        print("🔄 [30분 주기] MACD 갱신...")
-        ok = refresh_macd_top(200)
-        print(f"  ✅ MACD {ok}개 갱신")
-        _last_refresh["macd"] = now
+    # 30초: 가격 (Polygon WebSocket 없을 때만 - WS 켜져있으면 스킵)
+    if now - _last["grouped"] > 30 and not state.ws_connected:
+        _refresh_grouped()
+        _last["grouped"] = now
 
-    # 5) 뉴스 (10분 주기 - 24시간 작동)
-    if now - _last_refresh["news"] > 600:
-        print("🔄 [10분 주기] 뉴스 갱신...")
-        cnt = refresh_news()
-        print(f"  ✅ 뉴스 {cnt}개 종목")
-        _last_refresh["news"] = now
+    # 5분: 소셜
+    if now - _last["social"] > 300:
+        _refresh_social()
+        _last["social"] = now
 
-    # 6) SI/SV (1일 주기 - 86400초)
-    if now - _last_refresh["short_int"] > 86400:
-        print("🔄 [1일 주기] Short Interest 갱신...")
-        n = refresh_short_interest()
-        print(f"  ✅ SI {n}개 갱신")
-        _last_refresh["short_int"] = now
+    # 5분: 상위 일봉/매집
+    if now - _last["aggs_top"] > 300:
+        _refresh_aggs_top()
+        _last["aggs_top"] = now
 
-    # 7) Float (1일 주기)
-    if now - _last_refresh["float_data"] > 86400:
-        print("🔄 [1일 주기] Float 갱신...")
-        n = refresh_float()
-        print(f"  ✅ Float {n}개 갱신")
-        _last_refresh["float_data"] = now
+    # 10분: 뉴스
+    if now - _last["news"] > 600:
+        _refresh_news()
+        _last["news"] = now
 
-    # 8) 점수 재계산 + 히스토리 + 알림
-    ts = datetime.now(timezone.utc).isoformat()
-    gkr = {"IMMINENT": "임박", "HIGH": "높음"}
+    # 15분: 옵션 체인 (Starter 플랜)
+    if now - _last["options"] > 900:
+        _refresh_options()
+        _last["options"] = now
 
-    for sym, d in state.stocks.items():
-        prev_score = d.get("score", 0)
-        r = sqs(d)
-        d.update(r)
-        d["delta"] = round(d["score"] - prev_score, 2)
-        d["ts"] = ts
+    # 30분: 중위 일봉
+    if now - _last["aggs_mid"] > 1800:
+        _refresh_aggs_mid()
+        _last["aggs_mid"] = now
 
-        h = state.history.setdefault(sym, [])
-        h.append({"ts": ts, "score": d["score"], "grade": d["grade"]})
-        if len(h) > HISTORY_MAX:
-            h.pop(0)
+    # 30분: MACD
+    if now - _last["macd"] > 1800:
+        _refresh_macd()
+        _last["macd"] = now
 
-        if d["grade"] in ("IMMINENT", "HIGH") and d["grade"] != prev_grades.get(sym):
-            if time.time() - state.alert_cooldown.get(sym, 0) > ALERT_COOLDOWN_SEC:
-                state.alert_cooldown[sym] = time.time()
-                state.alerts.insert(0, {
-                    "id": len(state.alerts) + 1,
-                    "symbol": sym,
-                    "grade": d["grade"],
-                    "score": d["score"],
-                    "created_at": ts,
-                    "theme": d.get("theme", "기타"),
-                    "message": f"[{d.get('theme','?')}] {sym}({d.get('name',sym)}) → {gkr.get(d['grade'],'')} — {d['score']:.1f}점",
-                })
-                if len(state.alerts) > 300:
-                    state.alerts.pop()
+    # 1일: SI/SV/Float/펀더멘털/이벤트
+    if now - _last["si"] > 86400:
+        _refresh_si()
+        _last["si"] = now
+    if now - _last["sv"] > 86400:
+        _refresh_sv()
+        _last["sv"] = now
+    if now - _last["float"] > 86400:
+        _refresh_float()
+        _last["float"] = now
+    if now - _last["fundamentals"] > 86400:
+        _refresh_fundamentals()
+        _last["fundamentals"] = now
+    if now - _last["events"] > 86400:
+        _refresh_events()
+        _last["events"] = now
+
+    # ===== 점수 재계산 (Dirty-flag) =====
+    # 30초마다: dirty 된 것만
+    if now - _last["rescore_top"] > RESCORE_TOP_INTERVAL:
+        n = _rescore_dirty()
+        if n > 0:
+            print(f"🎯 [재계산] {n}개")
+        _last["rescore_top"] = now
+
+    # 이상거래 탐지 (5분)
+    if now - _last.get("anomaly", 0) > 300:
+        try:
+            detect_anomalies()
+        except Exception as e:
+            print(f"⚠️ 이상거래 탐지 실패: {e}")
+        _last["anomaly"] = now
+
+    # 알림 트리거
+    try:
+        check_event_alerts()
+    except Exception as e:
+        print(f"⚠️ 알림 체크 실패: {e}")
 
 
 def tick_loop():
-    """30초 주기 메인 루프"""
+    """백그라운드 스레드"""
     while True:
-        time.sleep(30)
         try:
-            tick_once()
+            if state.ready:
+                tick_once()
         except Exception as e:
-            print(f"⚠️ tick 오류: {e}")
+            print(f"❌ tick 오류: {e}")
+        time.sleep(5)
+
+
+def start_tick_thread():
+    t = threading.Thread(target=tick_loop, daemon=True)
+    t.start()
+    print("✅ Tick 루프 시작 (5초 간격)")
