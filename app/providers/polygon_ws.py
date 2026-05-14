@@ -150,3 +150,32 @@ def _handle_message(message: str):
                     }
     except json.JSONDecodeError:
         pass
+def start_ws_thread():
+    """
+    백그라운드 스레드로 Polygon WebSocket 시작
+    파일 안에 정의된 메인 루프 함수를 자동 탐지해서 실행
+    """
+    import threading
+    import sys
+    
+    # 현재 모듈에서 메인 루프 함수 후보 찾기
+    candidates = ["ws_loop", "run_ws", "run", "main_loop", "start", "polygon_ws_loop"]
+    module = sys.modules[__name__]
+    
+    target_func = None
+    for name in candidates:
+        f = getattr(module, name, None)
+        if callable(f):
+            target_func = f
+            print(f"✅ WebSocket 메인 루프 발견: {name}()")
+            break
+    
+    if not target_func:
+        print(f"⚠️ WebSocket 시작 실패: 메인 루프 함수를 찾을 수 없음")
+        print(f"   파일 안의 함수 이름을 확인하세요. 후보: {candidates}")
+        return None
+    
+    t = threading.Thread(target=target_func, daemon=True, name="polygon-ws")
+    t.start()
+    print(f"✅ Polygon WebSocket 스레드 시작")
+    return t
