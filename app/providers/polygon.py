@@ -1,43 +1,58 @@
-"""Polygon/Massive API 클라이언트"""
+"""Polygon/Massive API 클라이언트 — 옵션/펀더멘털/이벤트 확장"""
 import time, requests, urllib.parse as up
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from app.config import POLYGON_API_KEY
 from app import state
 
 BASE = "https://api.polygon.io"
+
+# 세션 재사용 (Keep-Alive)
+_session = requests.Session()
+_session.headers.update({"User-Agent": "ShortSqueezeHunter/4.0"})
 
 
 def _key_ok() -> bool:
     return bool(POLYGON_API_KEY)
 
 
-# ────────── 티커 목록 ──────────
+def _api_call(url: str, params: dict, timeout: int = 15):
+    """API 호출 + 메트릭 추적"""
+    state.metrics["polygon_api_calls"] += 1
+    try:
+        r = _session.get(url, params=params, timeout=timeout)
+        if r.status_code != 200:
+            state.metrics["polygon_api_errors"] += 1
+        return r
+    except Exception:
+        state.metrics["polygon_api_errors"] += 1
+        raise
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 티커 목록
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_all_tickers() -> list[dict]:
-    """전체 미국 상장 종목 (NASDAQ + NYSE) — 동적 수집"""
+    """전체 미국 상장 종목 (NASDAQ + NYSE)"""
     if not _key_ok():
         print("❌ POLYGON_API_KEY 미설정")
         return []
 
     out = []
     seen = set()
-    # XASE(NYSE American)는 페니스탁 위주 + 타임아웃 잦음 → 제외
     for exchange in ["XNAS", "XNYS"]:
         print(f"  📋 {exchange} 수집 중...")
         cursor = None
         while True:
             try:
                 params = {
-                    "market": "stocks",
-                    "exchange": exchange,
-                    "active": "true",
-                    "limit": 1000,
+                    "market": "stocks", "exchange": exchange,
+                    "active": "true", "limit": 1000,
                     "apiKey": POLYGON_API_KEY,
                 }
                 if cursor:
                     params["cursor"] = cursor
 
-                r = requests.get(f"{BASE}/v3/reference/tickers",
-                                 params=params, timeout=30)
+                r = _api_call(f"{BASE}/v3/reference/tickers", params, timeout=30)
                 if r.status_code != 200:
                     print(f"    ⚠️ {exchange} {r.status_code}: {r.text[:150]}")
                     break
@@ -80,7 +95,9 @@ def fetch_all_tickers() -> list[dict]:
     return out
 
 
-# ────────── 가격 데이터 ──────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 가격 데이터
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_grouped_daily() -> dict:
     """grouped daily — 가장 최근 거래일 전체 종목 OHLCV"""
     if not _key_ok():
@@ -89,7 +106,7 @@ def fetch_grouped_daily() -> dict:
     for days_back in range(1, 6):
         try_date = (date.today() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         try:
-            r = requests.get(
+            r = _api_call(
                 f"{BASE}/v2/aggs/grouped/locale/us/market/stocks/{try_date}",
                 params={"adjusted": "true", "apiKey": POLYGON_API_KEY},
                 timeout=30,
@@ -121,9 +138,11 @@ def fetch_grouped_daily() -> dict:
     return out
 
 
-# ────────── 일봉 90일 + 매집 지표 ──────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 일봉 90일 + 매집 지표 + 이상거래
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_aggs(sym: str) -> dict:
-    """90일 OHLCV → RSI/52주고저/매집지표 (1시간 캐시)"""
+    """90일 OHLCV → RSI/52주/매집/이상거래 (1시간 캐시)"""
     if not _key_ok():
         return {}
     cached = state.aggs_cache.get(sym)
@@ -139,7 +158,7 @@ def fetch_aggs(sym: str) -> dict:
         end = end_dt.strftime("%Y-%m-%d")
         start = (end_dt - timedelta(days=90)).strftime("%Y-%m-%d")
 
-        r = requests.get(
+        r = _api_call(
             f"{BASE}/v2/aggs/ticker/{sym}/range/1/day/{start}/{end}",
             params={"adjusted": "true", "sort": "asc", "limit": 90,
                     "apiKey": POLYGON_API_KEY},
@@ -157,14 +176,16 @@ def fetch_aggs(sym: str) -> dict:
         highs = [x["h"] for x in results]
         lows = [x["l"] for x in results]
 
-        # 기본 지표
         rsi_v = _calc_rsi(closes)
         avg_vol_20 = sum(vols[-20:]) / max(len(vols[-20:]), 1)
         avg_vol_50 = sum(vols[-50:]) / max(len(vols[-50:]), 1) if len(vols) >= 50 else avg_vol_20
         h52, l52, cur = max(highs), min(lows), closes[-1]
 
-        # ━━━ 매집 지표 계산 ━━━
+        # 매집 지표
         accumulation = _calc_accumulation(opens, closes, highs, lows, vols)
+
+        # 🆕 이상 거래 Z-score
+        anomaly = _calc_anomaly(closes, vols)
 
         result = {
             "rsi14": rsi_v,
@@ -174,7 +195,8 @@ def fetch_aggs(sym: str) -> dict:
             "low_52w": round(l52, 2),
             "dist_52w": round((h52 - cur) / max(h52, 1), 3),
             "vol_spike": round(vols[-1] / max(avg_vol_20, 1), 3),
-            **accumulation,  # 매집 지표 병합
+            **accumulation,
+            **anomaly,
             "_ts": time.time(),
         }
         state.aggs_cache[sym] = result
@@ -184,7 +206,6 @@ def fetch_aggs(sym: str) -> dict:
 
 
 def _calc_rsi(closes: list[float]) -> float:
-    """RSI(14) 계산"""
     if len(closes) < 15:
         return 50.0
     gains, losses = [], []
@@ -200,13 +221,57 @@ def _calc_rsi(closes: list[float]) -> float:
     return round(100 - 100 / (1 + rs), 1)
 
 
+def _calc_anomaly(closes: list[float], vols: list[float]) -> dict:
+    """🆕 Z-score 기반 이상 거래 탐지"""
+    n = len(vols)
+    if n < 20:
+        return {"vol_zscore": 0, "price_zscore": 0, "anomaly_signals": []}
+
+    # 거래량 Z-score (오늘 vs 30일)
+    hist_vols = vols[-30:-1] if n >= 30 else vols[:-1]
+    mean_v = sum(hist_vols) / len(hist_vols)
+    var_v = sum((v - mean_v) ** 2 for v in hist_vols) / len(hist_vols)
+    std_v = var_v ** 0.5
+    today_vol = vols[-1]
+    vol_z = (today_vol - mean_v) / max(std_v, 1)
+
+    # 가격 변화 Z-score
+    price_changes = [
+        (closes[i] - closes[i-1]) / max(closes[i-1], 0.01)
+        for i in range(1, len(closes))
+    ]
+    hist_changes = price_changes[-30:-1] if len(price_changes) >= 30 else price_changes[:-1]
+    if hist_changes:
+        mean_c = sum(hist_changes) / len(hist_changes)
+        var_c = sum((c - mean_c) ** 2 for c in hist_changes) / len(hist_changes)
+        std_c = var_c ** 0.5
+        today_change = price_changes[-1]
+        price_z = (today_change - mean_c) / max(std_c, 0.001)
+    else:
+        price_z = 0
+
+    signals = []
+    if vol_z >= 4:
+        signals.append(f"거래량 극단{vol_z:.1f}σ")
+    elif vol_z >= 3:
+        signals.append(f"거래량 이상{vol_z:.1f}σ")
+    if abs(price_z) >= 3:
+        signals.append(f"가격 이상{price_z:+.1f}σ")
+
+    return {
+        "vol_zscore": round(vol_z, 2),
+        "price_zscore": round(price_z, 2),
+        "anomaly_signals": signals,
+    }
+
+
 def _calc_accumulation(opens, closes, highs, lows, vols) -> dict:
-    """Wyckoff + OBV + CMF 기반 매집 신호 계산 (0~100점)"""
+    """Wyckoff + OBV + CMF 매집 신호 (0~100점)"""
     n = len(closes)
     if n < 20:
         return {"acc_score": 0, "acc_signals": []}
 
-    # ━━━ 1. OBV (On-Balance Volume) ━━━
+    # OBV
     obv = [0]
     for i in range(1, n):
         if closes[i] > closes[i-1]:
@@ -215,50 +280,35 @@ def _calc_accumulation(opens, closes, highs, lows, vols) -> dict:
             obv.append(obv[-1] - vols[i])
         else:
             obv.append(obv[-1])
-
-    # OBV 추세: 최근 20일 기울기
     obv_recent = obv[-20:]
-    obv_base = abs(obv_recent[0]) + 1
-    obv_slope = (obv_recent[-1] - obv_recent[0]) / obv_base
+    obv_slope = (obv_recent[-1] - obv_recent[0]) / (abs(obv_recent[0]) + 1)
 
-    # ━━━ 2. CMF (Chaikin Money Flow, 20일) ━━━
-    mfv_sum = 0.0
-    vol_sum = 0.0
+    # CMF
+    mfv_sum, vol_sum = 0.0, 0.0
     for i in range(max(n-20, 0), n):
         hl = highs[i] - lows[i]
-        if hl == 0:
-            mfm = 0
-        else:
-            mfm = ((closes[i] - lows[i]) - (highs[i] - closes[i])) / hl
-        mfv = mfm * vols[i]
-        mfv_sum += mfv
+        mfm = 0 if hl == 0 else ((closes[i] - lows[i]) - (highs[i] - closes[i])) / hl
+        mfv_sum += mfm * vols[i]
         vol_sum += vols[i]
     cmf = mfv_sum / max(vol_sum, 1)
 
-    # ━━━ 3. 거래량 급등 일수 (최근 10일 중) ━━━
-    if n >= 30:
-        avg_base = sum(vols[-30:-10]) / 20
-    else:
-        avg_base = sum(vols[:max(n-10, 1)]) / max(n-10, 1)
+    # 거래량 폭증일
+    avg_base = sum(vols[-30:-10]) / 20 if n >= 30 else sum(vols[:max(n-10, 1)]) / max(n-10, 1)
     vol_spike_days = sum(1 for v in vols[-10:] if v >= avg_base * 2.0)
 
-    # ━━━ 4. 가격 안정성 (ATR / 가격) ━━━
-    atr_sum = 0.0
-    atr_cnt = 0
+    # ATR
+    atr_sum, atr_cnt = 0.0, 0
     for i in range(max(n-10, 1), n):
-        tr = max(
-            highs[i] - lows[i],
-            abs(highs[i] - closes[i-1]),
-            abs(lows[i] - closes[i-1]),
-        )
+        tr = max(highs[i] - lows[i],
+                 abs(highs[i] - closes[i-1]),
+                 abs(lows[i] - closes[i-1]))
         atr_sum += tr
         atr_cnt += 1
     atr = atr_sum / max(atr_cnt, 1)
     price_stability = atr / max(closes[-1], 0.01)
 
-    # ━━━ 5. Wyckoff Spring (하단 지지 테스트 + 회복) ━━━
-    near_support = False
-    spring_recovery = False
+    # Wyckoff Spring
+    near_support, spring_recovery = False, False
     if n >= 60:
         low_60 = min(lows[-60:])
         low_20 = min(lows[-20:])
@@ -269,9 +319,8 @@ def _calc_accumulation(opens, closes, highs, lows, vols) -> dict:
                     spring_recovery = True
                     break
 
-    # ━━━ 6. 매집 vs 분산 캔들 비율 ━━━
-    acc_candles = 0
-    dist_candles = 0
+    # 매집/분산 캔들
+    acc_candles, dist_candles = 0, 0
     for i in range(max(n-20, 0), n):
         if vols[i] >= avg_base * 1.3:
             candle_range = highs[i] - lows[i]
@@ -283,55 +332,33 @@ def _calc_accumulation(opens, closes, highs, lows, vols) -> dict:
                     dist_candles += 1
     acc_ratio = acc_candles / max(acc_candles + dist_candles, 1)
 
-    # ━━━ 점수 산정 ━━━
+    # 점수 산정
     signals = []
     score = 0
-
-    # OBV 상승 추세 (25점)
     if obv_slope > 0.1:
-        score += 25
-        signals.append(f"OBV+{obv_slope*100:.1f}%")
+        score += 25; signals.append(f"OBV+{obv_slope*100:.1f}%")
     elif obv_slope > 0:
-        score += 12
-        signals.append("OBV 약상승")
-
-    # CMF (20점)
+        score += 12; signals.append("OBV 약상승")
     if cmf > 0.15:
-        score += 20
-        signals.append(f"CMF강세{cmf:+.2f}")
+        score += 20; signals.append(f"CMF강세{cmf:+.2f}")
     elif cmf > 0.05:
-        score += 10
-        signals.append(f"CMF{cmf:+.2f}")
+        score += 10; signals.append(f"CMF{cmf:+.2f}")
     elif cmf < -0.1:
         score -= 5
-
-    # 거래량 폭증 일수 (15점)
     if vol_spike_days >= 5:
-        score += 15
-        signals.append(f"거래량폭증{vol_spike_days}일")
+        score += 15; signals.append(f"거래량폭증{vol_spike_days}일")
     elif vol_spike_days >= 3:
-        score += 8
-        signals.append(f"거래량증가{vol_spike_days}일")
-
-    # 가격 안정 + 거래량 (15점)
+        score += 8; signals.append(f"거래량증가{vol_spike_days}일")
     if price_stability < 0.03 and vol_spike_days >= 2:
-        score += 15
-        signals.append("횡보+거래량↑")
+        score += 15; signals.append("횡보+거래량↑")
     elif price_stability < 0.05 and vol_spike_days >= 2:
         score += 8
-
-    # Wyckoff Spring (15점)
     if spring_recovery:
-        score += 15
-        signals.append("⚡Spring매집막바지")
+        score += 15; signals.append("⚡Spring매집막바지")
     elif near_support and vol_spike_days >= 2:
-        score += 8
-        signals.append("지지선테스트")
-
-    # 매집 캔들 우세 (10점)
+        score += 8; signals.append("지지선테스트")
     if acc_ratio >= 0.7 and (acc_candles + dist_candles) >= 5:
-        score += 10
-        signals.append(f"매집{acc_candles}:{dist_candles}분산")
+        score += 10; signals.append(f"매집{acc_candles}:{dist_candles}분산")
     elif acc_ratio >= 0.55 and (acc_candles + dist_candles) >= 5:
         score += 5
 
@@ -350,13 +377,15 @@ def _calc_accumulation(opens, closes, highs, lows, vols) -> dict:
     }
 
 
-# ────────── 종목 상세 ──────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 종목 상세
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_ticker_details(sym: str) -> dict:
     if not _key_ok():
         return {}
     try:
-        r = requests.get(f"{BASE}/v3/reference/tickers/{sym}",
-                         params={"apiKey": POLYGON_API_KEY}, timeout=10)
+        r = _api_call(f"{BASE}/v3/reference/tickers/{sym}",
+                      params={"apiKey": POLYGON_API_KEY}, timeout=10)
         if r.status_code != 200:
             return {}
         d = r.json().get("results", {})
@@ -370,7 +399,9 @@ def fetch_ticker_details(sym: str) -> dict:
         return {}
 
 
-# ────────── Short Interest ──────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Short Interest / Short Volume
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_short_interest_batch() -> dict:
     if not _key_ok():
         return {}
@@ -378,7 +409,7 @@ def fetch_short_interest_batch() -> dict:
     end = date.today().strftime("%Y-%m-%d")
     start = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
     try:
-        r = requests.get(
+        r = _api_call(
             f"{BASE}/stocks/v1/short-interest",
             params={
                 "settlement_date.gte": start,
@@ -414,8 +445,8 @@ def fetch_short_interest_batch() -> dict:
     return out
 
 
-# ────────── Short Volume ──────────
 def fetch_short_volume_batch() -> dict:
+    """🆕 다크풀 비율 계산 추가"""
     if not _key_ok():
         return {}
     out = {}
@@ -426,7 +457,7 @@ def fetch_short_volume_batch() -> dict:
         target -= timedelta(days=1)
     date_str = target.strftime("%Y-%m-%d")
     try:
-        r = requests.get(
+        r = _api_call(
             f"{BASE}/stocks/v1/short-volume",
             params={"date": date_str, "limit": 50000, "sort": "ticker.asc",
                     "apiKey": POLYGON_API_KEY},
@@ -437,11 +468,18 @@ def fetch_short_volume_batch() -> dict:
         for res in r.json().get("results", []):
             sym = res.get("ticker", "")
             ratio = float(res.get("short_volume_ratio", 0) or 0)
+            sv = float(res.get("short_volume", 0) or 0)
+            tv = float(res.get("total_volume", 1) or 1)
+            ev = float(res.get("exempt_volume", 0) or 0)
+            non_exchange = float(res.get("non_exchange_volume", 0) or 0)
+            # 🆕 다크풀 비율 = off-exchange / total
+            dark_pool_ratio = non_exchange / max(tv, 1) if non_exchange > 0 else 0
             if sym and ratio > 0:
                 out[sym] = {
                     "short_vol_ratio": round(ratio, 2),
-                    "short_volume": int(res.get("short_volume", 0) or 0),
-                    "total_volume": int(res.get("total_volume", 1) or 1),
+                    "short_volume": int(sv),
+                    "total_volume": int(tv),
+                    "dark_pool_ratio": round(dark_pool_ratio, 3),
                 }
         print(f"  ✅ Short Volume: {len(out)}개")
     except Exception as e:
@@ -449,7 +487,9 @@ def fetch_short_volume_batch() -> dict:
     return out
 
 
-# ────────── Float ──────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Float
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_float_batch() -> dict:
     if not _key_ok():
         return {}
@@ -460,7 +500,7 @@ def fetch_float_batch() -> dict:
             params = {"limit": 5000, "sort": "ticker.asc", "apiKey": POLYGON_API_KEY}
             if cursor:
                 params["cursor"] = cursor
-            r = requests.get(f"{BASE}/stocks/vX/float", params=params, timeout=30)
+            r = _api_call(f"{BASE}/stocks/vX/float", params, timeout=30)
             if r.status_code != 200:
                 break
             data = r.json()
@@ -487,33 +527,14 @@ def fetch_float_batch() -> dict:
     return out
 
 
-# ────────── 기술 지표 ──────────
-def fetch_rsi(sym: str) -> float:
-    if not _key_ok():
-        return 50.0
-    try:
-        r = requests.get(
-            f"{BASE}/v1/indicators/rsi/{sym}",
-            params={"timespan": "day", "adjusted": "true", "window": 14,
-                    "series_type": "close", "order": "desc", "limit": 1,
-                    "apiKey": POLYGON_API_KEY},
-            timeout=8,
-        )
-        if r.status_code != 200:
-            return 50.0
-        values = r.json().get("results", {}).get("values", [])
-        if not values:
-            return 50.0
-        return round(float(values[0].get("value", 50)), 1)
-    except Exception:
-        return 50.0
-
-
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 기술 지표 (MACD)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_macd(sym: str) -> dict:
     if not _key_ok():
         return {}
     try:
-        r = requests.get(
+        r = _api_call(
             f"{BASE}/v1/indicators/macd/{sym}",
             params={"timespan": "day", "adjusted": "true",
                     "short_window": 12, "long_window": 26, "signal_window": 9,
@@ -541,16 +562,259 @@ def fetch_macd(sym: str) -> dict:
         return {}
 
 
-# ────────── 뉴스 ──────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🆕 옵션 체인 스냅샷 (감마 집중도 + UOA + C/P Ratio)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def fetch_options_chain(sym: str) -> dict:
+    """옵션 체인 → 감마 집중도, C/P 비율, 비정상 활동 (15분 캐시)"""
+    if not _key_ok():
+        return {}
+    cached = state.options_cache.get(sym)
+    if cached and time.time() - cached.get("_ts", 0) < 900:
+        return cached
+
+    try:
+        # 현재가 가져오기
+        cur_price = state.stocks.get(sym, {}).get("price", 0)
+        if cur_price <= 0:
+            return {}
+
+        r = _api_call(
+            f"{BASE}/v3/snapshot/options/{sym}",
+            params={"limit": 250, "apiKey": POLYGON_API_KEY},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return {}
+
+        results = r.json().get("results", [])
+        if not results:
+            return {}
+
+        # 집계
+        call_oi_total = 0
+        put_oi_total = 0
+        call_vol_total = 0
+        put_vol_total = 0
+        otm_call_oi = 0
+        unusual_count = 0
+        total_contracts = 0
+
+        for contract in results:
+            details = contract.get("details", {})
+            day = contract.get("day", {})
+            oi = int(contract.get("open_interest", 0) or 0)
+            vol = int(day.get("volume", 0) or 0)
+            strike = float(details.get("strike_price", 0) or 0)
+            c_type = details.get("contract_type", "").lower()
+
+            if c_type == "call":
+                call_oi_total += oi
+                call_vol_total += vol
+                if strike > cur_price * 1.02:  # OTM
+                    otm_call_oi += oi
+            elif c_type == "put":
+                put_oi_total += oi
+                put_vol_total += vol
+
+            # 🆕 Unusual Options Activity: volume / OI > 1
+            if oi > 100 and vol / max(oi, 1) > 1.0:
+                unusual_count += 1
+            total_contracts += 1
+
+        # 지표 계산
+        total_oi = call_oi_total + put_oi_total
+        gamma_conc = otm_call_oi / max(total_oi, 1) if total_oi > 0 else 0
+        call_put_ratio = call_vol_total / max(put_vol_total, 1)
+        unusual_ratio = unusual_count / max(total_contracts, 1)
+
+        result = {
+            "gamma_conc": round(gamma_conc, 4),
+            "call_put_ratio": round(call_put_ratio, 2),
+            "unusual_options_score": round(unusual_ratio, 3),
+            "unusual_count": unusual_count,
+            "call_oi": call_oi_total,
+            "put_oi": put_oi_total,
+            "total_oi": total_oi,
+            "_ts": time.time(),
+        }
+        state.options_cache[sym] = result
+        return result
+    except Exception as e:
+        return {}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🆕 펀더멘털 (재무제표)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def fetch_fundamentals(sym: str) -> dict:
+    """재무제표 → 부채/자본, 현금소진율 (1일 캐시)"""
+    if not _key_ok():
+        return {}
+    cached = state.fundamentals_cache.get(sym)
+    if cached and time.time() - cached.get("_ts", 0) < 86400:
+        return cached
+
+    try:
+        r = _api_call(
+            f"{BASE}/vX/reference/financials",
+            params={"ticker": sym, "limit": 4, "timeframe": "quarterly",
+                    "apiKey": POLYGON_API_KEY},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return {}
+
+        results = r.json().get("results", [])
+        if not results:
+            return {}
+
+        latest = results[0].get("financials", {})
+        balance = latest.get("balance_sheet", {})
+        income = latest.get("income_statement", {})
+        cash_flow = latest.get("cash_flow_statement", {})
+
+        # 부채/자본 비율
+        total_liab = float(balance.get("liabilities", {}).get("value", 0) or 0)
+        total_eq = float(balance.get("equity", {}).get("value", 1) or 1)
+        debt_to_equity = total_liab / max(abs(total_eq), 1)
+
+        # 현금 소진율 (분기 영업 현금흐름)
+        op_cash = float(cash_flow.get("net_cash_flow_from_operating_activities", {}).get("value", 0) or 0)
+        current_cash = float(balance.get("current_assets", {}).get("value", 0) or 0)
+        # 현금 소진율 (개월 단위, 부정적일 때만 의미)
+        if op_cash < 0:
+            months_burn = current_cash / (abs(op_cash) / 3)
+            cash_runway = round(months_burn, 1)
+        else:
+            cash_runway = 999
+
+        # 매출 성장
+        revenues = float(income.get("revenues", {}).get("value", 0) or 0)
+        prev_revenues = 0
+        if len(results) >= 5:
+            prev = results[4].get("financials", {}).get("income_statement", {})
+            prev_revenues = float(prev.get("revenues", {}).get("value", 0) or 0)
+        rev_growth_yoy = ((revenues - prev_revenues) / max(prev_revenues, 1)) * 100 if prev_revenues > 0 else 0
+
+        result = {
+            "debt_to_equity": round(debt_to_equity, 2),
+            "cash_runway_months": cash_runway,
+            "revenue_growth_yoy": round(rev_growth_yoy, 1),
+            "revenues": revenues,
+            "_ts": time.time(),
+        }
+        state.fundamentals_cache[sym] = result
+        return result
+    except Exception:
+        return {}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🆕 기업 이벤트 (어닝/배당/분할)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def fetch_upcoming_dividends() -> dict:
+    """다가오는 배당 일정"""
+    if not _key_ok():
+        return {}
+    out = {}
+    today = date.today().strftime("%Y-%m-%d")
+    future = (date.today() + timedelta(days=60)).strftime("%Y-%m-%d")
+    try:
+        r = _api_call(
+            f"{BASE}/v3/reference/dividends",
+            params={"ex_dividend_date.gte": today,
+                    "ex_dividend_date.lte": future,
+                    "limit": 1000, "apiKey": POLYGON_API_KEY},
+            timeout=20,
+        )
+        if r.status_code != 200:
+            return {}
+        for res in r.json().get("results", []):
+            sym = res.get("ticker", "")
+            ex_date = res.get("ex_dividend_date", "")
+            cash = float(res.get("cash_amount", 0) or 0)
+            if sym and ex_date:
+                d_obj = datetime.strptime(ex_date, "%Y-%m-%d").date()
+                days_until = (d_obj - date.today()).days
+                if sym not in out or days_until < out[sym].get("days_until_ex_div", 999):
+                    out[sym] = {
+                        "ex_dividend_date": ex_date,
+                        "days_until_ex_div": days_until,
+                        "dividend_amount": cash,
+                    }
+        print(f"  ✅ 배당 일정: {len(out)}개")
+    except Exception as e:
+        print(f"  ❌ 배당: {e}")
+    return out
+
+
+def fetch_upcoming_splits() -> dict:
+    """다가오는 주식 분할"""
+    if not _key_ok():
+        return {}
+    out = {}
+    today = date.today().strftime("%Y-%m-%d")
+    future = (date.today() + timedelta(days=60)).strftime("%Y-%m-%d")
+    try:
+        r = _api_call(
+            f"{BASE}/v3/reference/splits",
+            params={"execution_date.gte": today,
+                    "execution_date.lte": future,
+                    "limit": 500, "apiKey": POLYGON_API_KEY},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return {}
+        for res in r.json().get("results", []):
+            sym = res.get("ticker", "")
+            exec_date = res.get("execution_date", "")
+            split_from = float(res.get("split_from", 1) or 1)
+            split_to = float(res.get("split_to", 1) or 1)
+            if sym and exec_date:
+                d_obj = datetime.strptime(exec_date, "%Y-%m-%d").date()
+                days_until = (d_obj - date.today()).days
+                out[sym] = {
+                    "split_date": exec_date,
+                    "days_until_split": days_until,
+                    "split_ratio": f"{split_to:.0f}:{split_from:.0f}",
+                }
+        print(f"  ✅ 분할 일정: {len(out)}개")
+    except Exception as e:
+        print(f"  ❌ 분할: {e}")
+    return out
+
+
+def fetch_earnings_estimate(sym: str) -> dict:
+    """🆕 어닝 예상일 (ticker events 이용)"""
+    if not _key_ok():
+        return {}
+    try:
+        r = _api_call(
+            f"{BASE}/vX/reference/tickers/{sym}/events",
+            params={"types": "ticker_change", "apiKey": POLYGON_API_KEY},
+            timeout=10,
+        )
+        # Polygon이 직접 어닝일을 안 줘서 — 보통 분기마다 정기 발표
+        # 마지막 분기 종료일 + 30~45일 추정
+        last_quarter_end = state.fundamentals_cache.get(sym, {}).get("_quarter_end", "")
+        # 단순화: 다음 어닝까지 30일이라고 가정 (실제론 Yahoo Finance나 EOD 사용 권장)
+        return {"days_to_earnings": 999}  # 향후 확장
+    except Exception:
+        return {"days_to_earnings": 999}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 뉴스
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_news_batch(limit: int = 1000) -> dict:
-    from datetime import datetime, timezone
     from app.config import CATALYST_KEYWORDS
     if not _key_ok():
         return {}
     out = {}
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
-        r = requests.get(
+        r = _api_call(
             f"{BASE}/v2/reference/news",
             params={"published_utc.gte": cutoff, "order": "desc",
                     "sort": "published_utc", "limit": limit, "apiKey": POLYGON_API_KEY},
@@ -591,7 +855,9 @@ def fetch_news_batch(limit: int = 1000) -> dict:
     return out
 
 
-# ────────── 실시간 스냅샷 ──────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 실시간 스냅샷
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_snapshots(syms: list[str]) -> dict:
     if not _key_ok() or not syms:
         return {}
@@ -599,7 +865,7 @@ def fetch_snapshots(syms: list[str]) -> dict:
     for i in range(0, len(syms), 100):
         batch = syms[i:i+100]
         try:
-            r = requests.get(
+            r = _api_call(
                 f"{BASE}/v3/snapshot",
                 params={"ticker.any_of": ",".join(batch), "apiKey": POLYGON_API_KEY},
                 timeout=15,
