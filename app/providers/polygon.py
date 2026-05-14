@@ -608,83 +608,164 @@ def fetch_macd(sym: str) -> dict:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🆕 옵션 체인 스냅샷 (감마 집중도 + UOA + C/P Ratio)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def fetch_options_chain(sym: str) -> dict:
-    """옵션 체인 → 감마 집중도, C/P 비율, 비정상 활동 (15분 캐시)"""
+def fetch_options_chain(sym):
+    """
+    옵션 체인 스냅샷 - 감마 집중도, C/P 비율, 이상 옵션 활동 계산
+    엔드포인트: /v3/snapshot/options/{underlying}
+    """
     if not _key_ok():
         return {}
-    cached = state.options_cache.get(sym)
-    if cached and time.time() - cached.get("_ts", 0) < 900:
-        return cached
-
+    
     try:
-        # 현재가 가져오기
-        cur_price = state.stocks.get(sym, {}).get("price", 0)
-        if cur_price <= 0:
+        url = f"https://api.polygon.io/v3/snapshot/options/{sym}"
+        params = {"limit": 250, "apiKey": POLYGON_API_KEY}
+        
+        all_contracts = []
+        pages = 0
+        next_url = url
+        
+        while next_url and pages < 4:   # 최대 4페이지 (1000 계약)
+            if pages == 0:
+                r = requests.get(next_url, params=params, timeout=15)
+            else:
+                # next_url 에 이미 apiKey 가 없으면 추가
+                if "apiKey=" not in next_url:
+                    sep = "&" if "?" in next_url else "?"
+                    next_url = f"{next_url}{sep}apiKey={POLYGON_API_KEY}"
+                r = requests.get(next_url, timeout=15)
+            
+            if r.status_code != 200:
+                # 옵션 없는 종목 (대부분)은 그냥 빈 결과
+                return {}
+            
+            data = r.json()
+            contracts = data.get("results", []) or []
+            if not contracts:
+                break
+            all_contracts.extend(contracts)
+            
+            next_url = data.get("next_url")
+            pages += 1
+        
+        if not all_contracts:
             return {}
-
-        r = _api_call(
-            f"{BASE}/v3/snapshot/options/{sym}",
-            params={"limit": 250, "apiKey": POLYGON_API_KEY},
-            timeout=15,
-        )
-        if r.status_code != 200:
-            return {}
-
-        results = r.json().get("results", [])
-        if not results:
-            return {}
-
-        # 집계
-        call_oi_total = 0
-        put_oi_total = 0
-        call_vol_total = 0
-        put_vol_total = 0
-        otm_call_oi = 0
+        
+        # === 집계 계산 (추정값 없음, API 데이터만) ===
+        total_call_oi = 0
+        total_put_oi = 0
+        total_call_volume = 0
+        total_put_volume = 0
+        iv_sum = 0
+        iv_count = 0
+        
+        # 행사가별 OI 집계 (Max Pain 계산용)
+        strike_oi = {}      # strike -> {call_oi, put_oi}
+        otm_call_oi = 0     # OTM 콜 OI (감마 집중도)
+        
+        # 현재가 추출 (계약에 들어있음)
+        underlying_price = 0
+        for c in all_contracts:
+            ua = c.get("underlying_asset", {}) or {}
+            p = ua.get("price")
+            if p and p > 0:
+                underlying_price = p
+                break
+        
+        # 이상 옵션 활동: 거래량 > OI 인 계약 개수
         unusual_count = 0
-        total_contracts = 0
-
-        for contract in results:
-            details = contract.get("details", {})
-            day = contract.get("day", {})
-            oi = int(contract.get("open_interest", 0) or 0)
-            vol = int(day.get("volume", 0) or 0)
-            strike = float(details.get("strike_price", 0) or 0)
-            c_type = details.get("contract_type", "").lower()
-
-            if c_type == "call":
-                call_oi_total += oi
-                call_vol_total += vol
-                if strike > cur_price * 1.02:  # OTM
-                    otm_call_oi += oi
-            elif c_type == "put":
-                put_oi_total += oi
-                put_vol_total += vol
-
-            # 🆕 Unusual Options Activity: volume / OI > 1
-            if oi > 100 and vol / max(oi, 1) > 1.0:
+        
+        for c in all_contracts:
+            details = c.get("details", {}) or {}
+            day = c.get("day", {}) or {}
+            greeks = c.get("greeks", {}) or {}
+            
+            ctype = details.get("contract_type")   # "call" or "put"
+            strike = details.get("strike_price", 0) or 0
+            oi = c.get("open_interest", 0) or 0
+            vol = day.get("volume", 0) or 0
+            iv = c.get("implied_volatility", 0) or 0
+            
+            if iv > 0:
+                iv_sum += iv
+                iv_count += 1
+            
+            # 이상 옵션: 거래량이 OI 의 2배 초과
+            if oi > 0 and vol > oi * 2 and vol > 100:
                 unusual_count += 1
-            total_contracts += 1
-
-        # 지표 계산
-        total_oi = call_oi_total + put_oi_total
-        gamma_conc = otm_call_oi / max(total_oi, 1) if total_oi > 0 else 0
-        call_put_ratio = call_vol_total / max(put_vol_total, 1)
-        unusual_ratio = unusual_count / max(total_contracts, 1)
-
-        result = {
-            "gamma_conc": round(gamma_conc, 4),
-            "call_put_ratio": round(call_put_ratio, 2),
-            "unusual_options_score": round(unusual_ratio, 3),
-            "unusual_count": unusual_count,
-            "call_oi": call_oi_total,
-            "put_oi": put_oi_total,
-            "total_oi": total_oi,
-            "_ts": time.time(),
+            
+            # 행사가별 집계
+            if strike not in strike_oi:
+                strike_oi[strike] = {"call": 0, "put": 0}
+            
+            if ctype == "call":
+                total_call_oi += oi
+                total_call_volume += vol
+                strike_oi[strike]["call"] += oi
+                # OTM 콜 (현재가보다 행사가 높음)
+                if underlying_price > 0 and strike > underlying_price:
+                    otm_call_oi += oi
+            elif ctype == "put":
+                total_put_oi += oi
+                total_put_volume += vol
+                strike_oi[strike]["put"] += oi
+        
+        # 감마 집중도 = OTM 콜 OI / 전체 콜 OI
+        gamma_concentration = (otm_call_oi / total_call_oi) if total_call_oi > 0 else 0
+        
+        # C/P 비율 (거래량 기준)
+        call_put_ratio = (total_call_volume / total_put_volume) if total_put_volume > 0 else 0
+        
+        # 이상 옵션 점수 (0~100)
+        unusual_score = min(100, unusual_count * 10)
+        
+        # Max Pain 계산
+        max_pain = _calc_max_pain(strike_oi) if strike_oi else 0
+        
+        # IV 평균
+        iv_avg = (iv_sum / iv_count) if iv_count > 0 else 0
+        
+        return {
+            "gamma_concentration": gamma_concentration,
+            "call_put_ratio": call_put_ratio,
+            "unusual_options_score": unusual_score,
+            "max_pain": max_pain,
+            "total_call_oi": total_call_oi,
+            "total_put_oi": total_put_oi,
+            "total_call_volume": total_call_volume,
+            "total_put_volume": total_put_volume,
+            "iv_avg": iv_avg,
+            "options_contracts_count": len(all_contracts),
+            "options_updated_at": time.time(),
         }
-        state.options_cache[sym] = result
-        return result
     except Exception as e:
         return {}
+
+
+def _calc_max_pain(strike_oi):
+    """Max Pain: 옵션 매수자가 가장 큰 손실을 보는 가격"""
+    if not strike_oi:
+        return 0
+    
+    strikes = sorted(strike_oi.keys())
+    min_pain = float("inf")
+    max_pain_strike = 0
+    
+    for test_strike in strikes:
+        pain = 0
+        for s, oi in strike_oi.items():
+            # 콜 손실: 행사가 < 테스트 가격일 때
+            if test_strike > s:
+                pain += (test_strike - s) * oi["call"]
+            # 풋 손실: 행사가 > 테스트 가격일 때
+            if test_strike < s:
+                pain += (s - test_strike) * oi["put"]
+        
+        if pain < min_pain:
+            min_pain = pain
+            max_pain_strike = test_strike
+    
+    return max_pain_strike
+    
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
