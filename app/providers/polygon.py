@@ -445,46 +445,89 @@ def fetch_short_interest_batch() -> dict:
     return out
 
 
-def fetch_short_volume_batch() -> dict:
-    """🆕 다크풀 비율 계산 추가"""
+def fetch_short_volume_batch():
+    """
+    Short Volume + Dark Pool 비율 수집
+    엔드포인트: /stocks/v1/short-volume (Starter 플랜 포함)
+    
+    Dark Pool 정의: ADF + Nasdaq Carteret + Nasdaq Chicago = off-exchange (다크풀)
+    NYSE 분량을 뺀 나머지가 다크풀로 간주됨
+    """
     if not _key_ok():
         return {}
-    out = {}
-    target = date.today()
-    for _ in range(5):
-        if target.weekday() < 5:
-            break
-        target -= timedelta(days=1)
-    date_str = target.strftime("%Y-%m-%d")
-    try:
-        r = _api_call(
-            f"{BASE}/stocks/v1/short-volume",
-            params={"date": date_str, "limit": 50000, "sort": "ticker.asc",
-                    "apiKey": POLYGON_API_KEY},
-            timeout=30,
-        )
-        if r.status_code != 200:
-            return {}
-        for res in r.json().get("results", []):
-            sym = res.get("ticker", "")
-            ratio = float(res.get("short_volume_ratio", 0) or 0)
-            sv = float(res.get("short_volume", 0) or 0)
-            tv = float(res.get("total_volume", 1) or 1)
-            ev = float(res.get("exempt_volume", 0) or 0)
-            non_exchange = float(res.get("non_exchange_volume", 0) or 0)
-            # 🆕 다크풀 비율 = off-exchange / total
-            dark_pool_ratio = non_exchange / max(tv, 1) if non_exchange > 0 else 0
-            if sym and ratio > 0:
-                out[sym] = {
-                    "short_vol_ratio": round(ratio, 2),
-                    "short_volume": int(sv),
-                    "total_volume": int(tv),
-                    "dark_pool_ratio": round(dark_pool_ratio, 3),
+
+    from datetime import datetime, timedelta
+    result = {}
+    
+    # 가장 최근 영업일 (오늘 ~ 7일 전까지 순회하며 데이터 있는 날 찾음)
+    base_url = "https://api.polygon.io/stocks/v1/short-volume"
+    
+    # 날짜를 명시하지 않으면 가장 최근 데이터를 가져옴 (sort=date.desc)
+    # 페이지네이션으로 전체 종목 수집
+    next_url = (
+        f"{base_url}?limit=50000&sort=date.desc&apiKey={POLYGON_API_KEY}"
+    )
+    
+    seen_per_ticker = set()   # 가장 최근 날짜 1건만 사용
+    pages = 0
+    
+    while next_url and pages < 5:   # 최대 5페이지 (안전장치)
+        try:
+            r = requests.get(next_url, timeout=30)
+            if r.status_code != 200:
+                print(f"  ⚠️ short-volume HTTP {r.status_code}: {r.text[:200]}")
+                break
+            
+            data = r.json()
+            rows = data.get("results", []) or []
+            
+            for row in rows:
+                tk = row.get("ticker")
+                if not tk or tk in seen_per_ticker:
+                    continue
+                seen_per_ticker.add(tk)
+                
+                short_vol = row.get("short_volume")
+                total_vol = row.get("total_volume")
+                sv_ratio = row.get("short_volume_ratio")
+                
+                # 다크풀 거래량 = ADF + Nasdaq Carteret + Nasdaq Chicago
+                # (NYSE는 정규 거래소이므로 제외)
+                adf = (row.get("adf_short_volume") or 0) + (row.get("adf_short_volume_exempt") or 0)
+                nas_c = (row.get("nasdaq_carteret_short_volume") or 0) + (row.get("nasdaq_carteret_short_volume_exempt") or 0)
+                nas_ch = (row.get("nasdaq_chicago_short_volume") or 0) + (row.get("nasdaq_chicago_short_volume_exempt") or 0)
+                
+                dark_pool_short = adf + nas_c + nas_ch
+                
+                # 다크풀 비율 = (다크풀 숏 / 전체 숏)
+                # short_volume 이 있을 때만 계산, 없으면 0
+                if short_vol and short_vol > 0:
+                    dark_pool_ratio = dark_pool_short / short_vol
+                else:
+                    dark_pool_ratio = 0
+                
+                # 값 저장 — 추정/임의값 없음, API가 준 그대로
+                entry = {
+                    "short_volume": short_vol or 0,
+                    "total_volume_sv": total_vol or 0,
+                    "short_volume_ratio": (sv_ratio / 100) if sv_ratio else 0,   # 0~1 정규화
+                    "dark_pool_ratio": dark_pool_ratio,
+                    "sv_date": row.get("date"),
                 }
-        print(f"  ✅ Short Volume: {len(out)}개")
-    except Exception as e:
-        print(f"  ❌ SV 오류: {e}")
-    return out
+                result[tk] = entry
+            
+            next_url = data.get("next_url")
+            if next_url and "apiKey=" not in next_url:
+                next_url += f"&apiKey={POLYGON_API_KEY}"
+            pages += 1
+            
+        except Exception as e:
+            print(f"  ⚠️ short-volume 에러: {e}")
+            break
+    
+    print(f"  ✅ Short Volume: {len(result)}개")
+    return result
+
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
