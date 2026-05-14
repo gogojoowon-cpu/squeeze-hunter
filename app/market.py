@@ -1,33 +1,53 @@
-"""미국장 개장/폐장 판단"""
-from datetime import datetime
-
-try:
-    from zoneinfo import ZoneInfo
-    ET_TZ = ZoneInfo("America/New_York")
-except ImportError:
-    ET_TZ = None
-
-
-def is_market_open() -> bool:
-    if not ET_TZ:
-        return True
-    now = datetime.now(ET_TZ)
-    if now.weekday() >= 5:
-        return False
-    mo = now.replace(hour=9, minute=30, second=0, microsecond=0)
-    mc = now.replace(hour=16, minute=0, second=0, microsecond=0)
-    return mo <= now <= mc
+"""
+미국 시장 시간 판정
+- 정규장: 09:30 ~ 16:00 ET (월~금)
+- 프리장: 04:00 ~ 09:30 ET
+- 애프터: 16:00 ~ 20:00 ET
+"""
+from datetime import datetime, timezone, timedelta
 
 
-def market_status() -> str:
-    if not ET_TZ:
-        return "🟢 장중"
-    now = datetime.now(ET_TZ)
-    if now.weekday() >= 5:
-        return "주말 휴장"
-    h, m = now.hour, now.minute
-    if (h == 9 and m >= 30) or (10 <= h <= 15) or (h == 16 and m == 0):
-        return f"🟢 장중 {h:02d}:{m:02d} ET"
-    if h < 9 or (h == 9 and m < 30):
-        return "🟡 프리마켓"
-    return "🔴 장 마감"
+def _nth_weekday(year, month, weekday, n):
+    d = datetime(year, month, 1)
+    days_ahead = (weekday - d.weekday()) % 7
+    d += timedelta(days=days_ahead + 7 * (n - 1))
+    return d
+
+
+def _now_et():
+    utc = datetime.now(timezone.utc)
+    year = utc.year
+    dst_start = _nth_weekday(year, 3, 6, 2)   # 3월 둘째 일요일
+    dst_end = _nth_weekday(year, 11, 6, 1)    # 11월 첫째 일요일
+    is_dst = dst_start <= utc.replace(tzinfo=None) < dst_end
+    offset = -4 if is_dst else -5
+    return utc + timedelta(hours=offset)
+
+
+def get_market_session():
+    """'pre' | 'regular' | 'after' | 'closed'"""
+    et = _now_et()
+    if et.weekday() >= 5:
+        return "closed"
+    m = et.hour * 60 + et.minute
+    if 240 <= m < 570:    return "pre"        # 04:00 ~ 09:30
+    if 570 <= m < 960:    return "regular"    # 09:30 ~ 16:00
+    if 960 <= m < 1200:   return "after"      # 16:00 ~ 20:00
+    return "closed"
+
+
+def is_market_open():
+    return get_market_session() == "regular"
+
+
+def is_market_active():
+    return get_market_session() in ("pre", "regular", "after")
+
+
+def session_label_kr():
+    return {
+        "pre":     "🌅 프리장",
+        "regular": "🟢 정규장",
+        "after":   "🌆 애프터",
+        "closed":  "🔴 마감",
+    }.get(get_market_session(), "❓")
