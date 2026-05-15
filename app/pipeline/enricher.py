@@ -327,22 +327,51 @@ def _mark_dirty(syms):
 # ============================================================
 # 주기적 갱신 함수들
 # ============================================================
+# 파일 상단 (import 아래) 또는 함수 바로 위에 모듈 변수 추가
+_grouped_log_counter = 0
+
 def _refresh_grouped():
-    """가격/거래량 갱신 (30초)"""
+    """30초 주기 가격/거래량 갱신 (grouped daily)"""
+    global _grouped_log_counter
+    
     try:
         data = polygon.fetch_grouped_daily()
-        cnt = 0
-        for sym, d in data.items():
-            if sym in state.stocks:
-                old_price = state.stocks[sym].get("price", 0)
-                state.stocks[sym].update(d)
-                new_price = d.get("price", 0)
-                if old_price > 0 and abs(new_price - old_price) / old_price > 0.01:
-                    _mark_dirty(sym)
-                cnt += 1
-        _log(f"🔄 [30초] 가격 갱신 {cnt}개")
     except Exception as e:
-        print(f"⚠️ 가격 갱신 실패: {e}")
+        print(f"⚠️ grouped 수집 실패: {e}")
+        return
+    
+    if not data:
+        return
+    
+    updated = 0
+    dirty_added = 0
+    for row in data:
+        sym = row.get("T")
+        if not sym or sym not in state.symbols:
+            continue
+        
+        d = state.symbols[sym]
+        old_price = d.get("price", 0)
+        new_price = row.get("c", 0)
+        new_vol = row.get("v", 0)
+        
+        if new_price > 0:
+            d["price"] = new_price
+            d["volume"] = new_vol
+            updated += 1
+            
+            # 0.3% 이상 변동시 dirty 마크 (1% → 0.3%로 완화)
+            if old_price > 0:
+                change = abs(new_price - old_price) / old_price
+                if change > 0.003:
+                    state.dirty_symbols.add(sym)
+                    dirty_added += 1
+    
+    # 10번에 1번만 출력 (≈ 5분마다)
+    _grouped_log_counter += 1
+    if _grouped_log_counter % 10 == 1:
+        print(f"  📡 grouped: {len(data)}개 수신, {updated}개 적용, dirty +{dirty_added}")
+
 
 
 def _refresh_social():
