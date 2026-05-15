@@ -31,8 +31,8 @@ def _api_call(url: str, params: dict, timeout: int = 15):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 티커 목록
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def fetch_all_tickers() -> list[dict]:
-    """전체 미국 상장 종목 (NASDAQ + NYSE)"""
+ddef fetch_all_tickers() -> list[dict]:
+    """전체 미국 상장 종목 (NASDAQ + NYSE) + 시총/발행주식수 포함"""
     if not _key_ok():
         print("❌ POLYGON_API_KEY 미설정")
         return []
@@ -73,8 +73,16 @@ def fetch_all_tickers() -> list[dict]:
                             and "WARRANT" not in name.upper()
                             and "PREFERRED" not in name.upper()):
                         out.append({
-                            "symbol": sym, "name": name,
+                            "symbol": sym,
+                            "name": name,
                             "sic": int(item.get("sic_code", 0) or 0),
+                            # ⭐ v2: 시총/발행주식수도 받기 (Polygon이 제공)
+                            "market_cap": float(item.get("market_cap", 0) or 0),
+                            "shares_outstanding": int(
+                                item.get("weighted_shares_outstanding", 0)
+                                or item.get("share_class_shares_outstanding", 0)
+                                or 0
+                            ),
                         })
                         seen.add(sym)
 
@@ -93,6 +101,7 @@ def fetch_all_tickers() -> list[dict]:
 
     print(f"✅ 전체 티커: {len(out)}개")
     return out
+
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -142,7 +151,7 @@ def fetch_grouped_daily() -> dict:
 # 일봉 90일 + 매집 지표 + 이상거래
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_aggs(sym: str) -> dict:
-    """90일 OHLCV → RSI/52주/매집/이상거래 (1시간 캐시)"""
+    """90일 OHLCV → RSI/52주/매집/이상거래/rotation (1시간 캐시)"""
     if not _key_ok():
         return {}
     cached = state.aggs_cache.get(sym)
@@ -184,8 +193,14 @@ def fetch_aggs(sym: str) -> dict:
         # 매집 지표
         accumulation = _calc_accumulation(opens, closes, highs, lows, vols)
 
-        # 🆕 이상 거래 Z-score
+        # 이상 거래 Z-score
         anomaly = _calc_anomaly(closes, vols)
+
+        # ⭐ v2: rotation 계산 (오늘 거래량 / Float)
+        # Float 데이터가 이미 stocks dict에 들어있다면 사용
+        fs = state.stocks.get(sym, {}).get("float_shares", 0) or 0
+        today_vol = vols[-1]
+        rotation = round(today_vol / fs, 4) if fs > 0 else 0
 
         result = {
             "rsi14": rsi_v,
@@ -195,6 +210,7 @@ def fetch_aggs(sym: str) -> dict:
             "low_52w": round(l52, 2),
             "dist_52w": round((h52 - cur) / max(h52, 1), 3),
             "vol_spike": round(vols[-1] / max(avg_vol_20, 1), 3),
+            "rotation": rotation,  # ⭐ 추가
             **accumulation,
             **anomaly,
             "_ts": time.time(),
