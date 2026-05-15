@@ -31,7 +31,7 @@ def _api_call(url: str, params: dict, timeout: int = 15):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 티커 목록
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ddef fetch_all_tickers() -> list[dict]:
+def fetch_all_tickers() -> list[dict]:
     """전체 미국 상장 종목 (NASDAQ + NYSE) + 시총/발행주식수 포함"""
     if not _key_ok():
         print("❌ POLYGON_API_KEY 미설정")
