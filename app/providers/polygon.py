@@ -5,6 +5,8 @@ from app.config import POLYGON_API_KEY
 from app import state
 
 BASE = "https://api.polygon.io"
+_options_403_count = 0
+
 
 # 세션 재사용 (Keep-Alive)
 _session = requests.Session()
@@ -652,15 +654,19 @@ def fetch_macd(sym: str) -> dict:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🆕 옵션 체인 스냅샷 (감마 집중도 + UOA + C/P Ratio)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def fetch_options_chain(sym):
+def fetch_options_chain(sym: str) -> dict:
     """
-    종목별 옵션 체인 수집 + 감마/콜풋비율/특이옵션/맥스페인 계산.
+    옵션 체인 데이터 수집 (Polygon /v3/snapshot/options/{sym})
+    - 최대 4페이지(약 1000개 계약) 페이지네이션
+    - OI, 거래량, IV, 비정상 옵션 수, 행사가별 OI 집계
+    - 403 응답은 조용히 무시 (Polygon Starter 플랜은 옵션 미지원)
     
     Returns:
         dict: {
-            "gamma_concentration": float (0~1),
+            "gamma_concentration": float,
+            "gamma_conc": float,           # scoring.py 호환용 별칭
             "call_put_ratio": float,
-            "unusual_options_score": float (0~100),
+            "unusual_options_score": float,
             "max_pain": float,
             "total_call_oi": int,
             "total_put_oi": int,
@@ -668,143 +674,141 @@ def fetch_options_chain(sym):
             "total_put_volume": int,
             "avg_iv": float,
             "contract_count": int,
-            "timestamp": float
+            "timestamp": float,
         }
+        또는 빈 dict {} (데이터 없음/권한 없음)
     """
-    from app.config import POLYGON_API_KEY
-    import requests
-    import time as _time
+    import time
     
-    url = f"https://api.polygon.io/v3/snapshot/options/{sym}"
-    params = {
-        "limit": 250,
-        "apiKey": POLYGON_API_KEY,
-    }
+    if not POLYGON_API_KEY:
+        return {}
     
-    contracts = []
-    page_count = 0
-    max_pages = 4  # 최대 4페이지 (1000건)
-    next_url = url
+    base_url = f"{POLYGON_BASE}/v3/snapshot/options/{sym}"
+    params = {"apiKey": POLYGON_API_KEY, "limit": 250}
+    
+    all_contracts = []
+    next_url = None
+    max_pages = 4
     
     try:
-        while next_url and page_count < max_pages:
-            if page_count == 0:
-                resp = requests.get(next_url, params=params, timeout=20)
+        for page in range(max_pages):
+            if next_url:
+                # next_url에는 이미 쿼리스트링이 있으므로 apiKey만 추가
+                url = next_url
+                if "apiKey=" not in url:
+                    sep = "&" if "?" in url else "?"
+                    url = f"{url}{sep}apiKey={POLYGON_API_KEY}"
+                r = requests.get(url, timeout=10)
             else:
-                sep = "&" if "?" in next_url else "?"
-                resp = requests.get(
-                    f"{next_url}{sep}apiKey={POLYGON_API_KEY}",
-                    timeout=20
-                )
+                r = requests.get(base_url, params=params, timeout=10)
             
-            if resp.status_code != 200:
-                if resp.status_code == 404:
-                    return {}  # 옵션 없는 종목
-                print(f"⚠️ Options {sym} HTTP {resp.status_code}")
-                break
+            # 403 = Polygon Starter 플랜 권한 없음 → 조용히 무시
+            if r.status_code == 403:
+                return {}
             
-            data = resp.json()
+            # 404 = 옵션이 없는 종목 → 조용히 무시
+            if r.status_code == 404:
+                return {}
+            
+            if r.status_code != 200:
+                # 기타 HTTP 오류는 한 번만 출력
+                if page == 0:
+                    print(f"⚠️ Options {sym} HTTP {r.status_code}")
+                return {}
+            
+            data = r.json()
             results = data.get("results", [])
-            
             if not results:
                 break
             
-            contracts.extend(results)
-            
+            all_contracts.extend(results)
             next_url = data.get("next_url")
-            page_count += 1
-        
-        if not contracts:
-            return {}
-        
-        # 현재가 추출 (첫 컨트랙트의 underlying_asset.price)
-        underlying_price = 0
-        for c in contracts:
-            ua = c.get("underlying_asset", {}) or {}
-            p = ua.get("price", 0) or 0
-            if p > 0:
-                underlying_price = p
+            if not next_url:
                 break
-        
-        total_call_oi = 0
-        total_put_oi = 0
-        total_call_vol = 0
-        total_put_vol = 0
-        otm_call_oi = 0
-        unusual_count = 0
-        iv_sum = 0.0
-        iv_count = 0
-        strike_oi = {}  # for max pain: {strike: {"call": oi, "put": oi}}
-        
-        for c in contracts:
-            details = c.get("details", {}) or {}
-            day = c.get("day", {}) or {}
-            oi = c.get("open_interest", 0) or 0
-            vol = day.get("volume", 0) or 0
-            iv = c.get("implied_volatility", 0) or 0
-            
-            ctype = details.get("contract_type", "")  # "call" or "put"
-            strike = details.get("strike_price", 0) or 0
-            
-            if iv > 0:
-                iv_sum += iv
-                iv_count += 1
-            
-            # 특이 옵션: 거래량 > 2*OI 그리고 거래량 > 100
-            if oi > 0 and vol > 2 * oi and vol > 100:
-                unusual_count += 1
-            
-            # strike별 OI 집계 (max pain용)
-            if strike > 0:
-                if strike not in strike_oi:
-                    strike_oi[strike] = {"call": 0, "put": 0}
-                
-                if ctype == "call":
-                    total_call_oi += oi
-                    total_call_vol += vol
-                    strike_oi[strike]["call"] += oi
-                    # OTM call: strike > 현재가
-                    if underlying_price > 0 and strike > underlying_price:
-                        otm_call_oi += oi
-                
-                elif ctype == "put":
-                    total_put_oi += oi
-                    total_put_vol += vol
-                    strike_oi[strike]["put"] += oi
-        
-        # 감마 집중도: OTM 콜 OI / 전체 콜 OI
-        gamma_conc = (otm_call_oi / total_call_oi) if total_call_oi > 0 else 0.0
-        
-        # 콜풋 비율 (거래량 기준)
-        cp_ratio = (total_call_vol / total_put_vol) if total_put_vol > 0 else 0.0
-        
-        # 특이 옵션 점수 (컨트랙트 대비 비율 → 0~100)
-        uo_score = (unusual_count / len(contracts) * 1000) if contracts else 0
-        uo_score = min(uo_score, 100)
-        
-        # Max Pain
-        max_pain = _calc_max_pain(strike_oi)
-        
-        # 평균 IV
-        avg_iv = (iv_sum / iv_count) if iv_count > 0 else 0
-        
-        return {
-            "gamma_concentration": round(gamma_conc, 4),
-            "call_put_ratio": round(cp_ratio, 3),
-            "unusual_options_score": round(uo_score, 1),
-            "max_pain": round(max_pain, 2),
-            "total_call_oi": total_call_oi,
-            "total_put_oi": total_put_oi,
-            "total_call_volume": total_call_vol,
-            "total_put_volume": total_put_vol,
-            "avg_iv": round(avg_iv, 4),
-            "contract_count": len(contracts),
-            "timestamp": _time.time(),
-        }
     
-    except Exception as e:
-        print(f"❌ fetch_options_chain({sym}) 실패: {e}")
+    except requests.exceptions.Timeout:
         return {}
+    except Exception:
+        return {}
+    
+    if not all_contracts:
+        return {}
+    
+    # ============ 집계 ============
+    total_call_oi = 0
+    total_put_oi = 0
+    total_call_volume = 0
+    total_put_volume = 0
+    iv_sum = 0.0
+    iv_count = 0
+    unusual_count = 0
+    strike_oi = {}  # {strike: total_oi} for max pain
+    
+    for c in all_contracts:
+        details = c.get("details", {})
+        contract_type = details.get("contract_type", "")
+        strike = details.get("strike_price", 0)
+        
+        day = c.get("day", {})
+        oi = c.get("open_interest", 0) or 0
+        volume = day.get("volume", 0) or 0
+        iv = c.get("implied_volatility", 0) or 0
+        
+        # IV 평균 계산
+        if iv > 0:
+            iv_sum += iv
+            iv_count += 1
+        
+        # 비정상 옵션: 거래량이 OI의 2배 이상
+        if oi > 0 and volume > oi * 2 and volume > 100:
+            unusual_count += 1
+        
+        # 행사가별 OI 누적 (max pain 계산용)
+        if strike > 0:
+            strike_oi[strike] = strike_oi.get(strike, 0) + oi
+        
+        # 콜/풋 분류
+        if contract_type == "call":
+            total_call_oi += oi
+            total_call_volume += volume
+        elif contract_type == "put":
+            total_put_oi += oi
+            total_put_volume += volume
+    
+    # ============ 파생 지표 ============
+    # Call/Put Ratio (콜 OI / 풋 OI)
+    call_put_ratio = round(total_call_oi / total_put_oi, 2) if total_put_oi > 0 else 0.0
+    
+    # Average IV
+    avg_iv = round(iv_sum / iv_count, 4) if iv_count > 0 else 0.0
+    
+    # Unusual Options Score (0~1)
+    unusual_options_score = round(min(unusual_count / 20, 1.0), 3)
+    
+    # Gamma Concentration: 거래량 가중 콜 비율
+    total_volume = total_call_volume + total_put_volume
+    if total_volume > 0:
+        gamma_concentration = round(total_call_volume / total_volume, 3)
+    else:
+        gamma_concentration = 0.0
+    
+    # Max Pain: 옵션 매수자의 총 손실이 최소가 되는 행사가
+    max_pain = _calc_max_pain(strike_oi) if strike_oi else 0.0
+    
+    return {
+        "gamma_concentration": gamma_concentration,
+        "gamma_conc": gamma_concentration,  # scoring.py 호환용
+        "call_put_ratio": call_put_ratio,
+        "unusual_options_score": unusual_options_score,
+        "max_pain": max_pain,
+        "total_call_oi": total_call_oi,
+        "total_put_oi": total_put_oi,
+        "total_call_volume": total_call_volume,
+        "total_put_volume": total_put_volume,
+        "avg_iv": avg_iv,
+        "contract_count": len(all_contracts),
+        "timestamp": time.time(),
+    }
 
 
 def _calc_max_pain(strike_oi):
