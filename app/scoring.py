@@ -1,19 +1,23 @@
-"""SQS(Squeeze Score) 점수 계산 — v6
+"""SQS(Squeeze Score) 점수 계산 — v7
 
-v6 핵심 변경 (옵션 권한 없는 Polygon Starter 환경 최적화):
+v7 핵심 변경 (v6 → v7):
+- market_cap=0 (데이터 없음)일 때 페널티 -10 제거
+- v6의 옵션 없는 환경 최적화는 그대로 유지
+
+v6 변경 요약 (참고):
 - 옵션 관련 점수(감마/CP/UOA) 가중치 대폭 축소 (16점 → 4점)
 - 다크풀(매집 신호)/거래량 스파이크 가중치 강화
 - 매집(acc_score) 가중치 12점 → 18점 (핵심 신호로 격상)
 - SI%, 거래량 폭증, 매집 3개를 메인 축으로 재구성
-- 데이터 결손에 강한 가산점 구조 (대부분 종목이 50~70점 도달 가능)
-- 추격매수 페널티 유지 / 매집 횡보 보너스 강화
+- 데이터 결손에 강한 가산점 구조
+- 추격매수 페널티 / 매집 횡보 보너스
 
 만점 구조 (총 ≈ 125점, 100점 캡):
   공매도(SI/DTC/CTB/Util): 50점
   유동/거래(Float/Rot/Spike/Dist): 38점
-  매집/기술(Acc/RSI/MACD):  28점 + 횡보 보너스 7점
+  매집/기술(Acc/RSI/MACD):  28점 + 횡보 보너스 10점
   소셜/뉴스(Soc/Sen/Cat):   16점
-  옵션(Gam/CP/UOA):         4점  (데이터 들어오면 보너스)
+  옵션(Gam/CP/UOA):         4점
   이상거래(Z/DP/Event):     16점
   펀더멘털:                 2점
 """
@@ -33,7 +37,7 @@ def grade(s: float) -> str:
 
 
 def sqs(m: dict) -> dict:
-    """v6 점수식 — 옵션 없는 환경 최적화 + 매집 구간 선호"""
+    """v7 점수식 — 옵션 없는 환경 최적화 + 매집 구간 선호 + 시총 페널티 조건 수정"""
 
     # ━━━ 공매도 SI% (비선형 25점) ━━━
     si_raw = m.get("si_pct", 0)
@@ -87,8 +91,7 @@ def sqs(m: dict) -> dict:
     elif r14 < 30:        rsi = 2.0
     else:                 rsi = 0.0
 
-    # ━━━ ⭐ v6: 매집 신호 12점 → 18점 (핵심 신호로 격상) ━━━
-    # acc_score는 0~100 (Wyckoff + OBV + CMF 합산)
+    # ━━━ 매집 신호 (핵심 신호, 최대 18점) ━━━
     acc_score_raw = m.get("acc_score", 0)
     acc = (acc_score_raw / 100) * 18
 
@@ -113,10 +116,8 @@ def sqs(m: dict) -> dict:
     sen = max(0, m.get("sentiment", 0)) * 4
     cat = 4.0 if m.get("has_catalyst", False) else 0.0
 
-    # ━━━ ⭐ v6: 옵션 관련 대폭 축소 (16점 → 4점) ━━━
-    # Polygon Options 권한 없는 환경에서 영구 0이므로 점수 비중 최소화
-    # 데이터 있으면 보너스로 작용
-    gam = clamp(m.get("gamma_conc", 0), 0, 1) * 2  # 8 → 2
+    # ━━━ 옵션 관련 (Polygon Options 권한 없음 → 비중 최소화) ━━━
+    gam = clamp(m.get("gamma_conc", 0), 0, 1) * 2
 
     cp_ratio = m.get("call_put_ratio", 1.0)
     if cp_ratio >= 3.0:
@@ -128,9 +129,9 @@ def sqs(m: dict) -> dict:
 
     uoa = m.get("unusual_options_score", 0)
     uoa_norm = uoa / 100.0 if uoa > 1 else uoa
-    uoa_score = clamp(uoa_norm, 0, 1) * 1  # 4 → 1
+    uoa_score = clamp(uoa_norm, 0, 1) * 1
 
-    # ━━━ ⭐ v6: 다크풀 강화 (4점 → 8점, 기관 매집 신호) ━━━
+    # ━━━ 다크풀 (기관 매집 신호, 최대 8점) ━━━
     dark_pool = m.get("dark_pool_ratio", 0)
     if dark_pool >= 0.6:
         dp_score = 8.0
@@ -172,7 +173,7 @@ def sqs(m: dict) -> dict:
     else:
         event_score = 0.0
 
-    # ━━━ ⭐ v6: 횡보 매집 보너스 강화 (최대 7점 → 10점) ━━━
+    # ━━━ 횡보 매집 보너스 (최대 10점) ━━━
     change_pct = m.get("change_pct", 0)
     consolidation_bonus = 0.0
     if (40 <= r14 <= 55 and
@@ -181,7 +182,7 @@ def sqs(m: dict) -> dict:
         consolidation_bonus = 6.0
         if vs_raw >= 1.3:
             consolidation_bonus += 2.0
-        if acc_score_raw >= 50:  # 매집 점수도 높으면 추가 보너스
+        if acc_score_raw >= 50:
             consolidation_bonus += 2.0
 
     # ━━━ 추격매수 페널티 ━━━
@@ -204,9 +205,13 @@ def sqs(m: dict) -> dict:
            fund_score + event_score + dp_score +
            consolidation_bonus)
 
-    pen = (10 if m.get("market_cap", 1e9) < 50e6 else 0) + \
-          (15 if m.get("has_dilution", False) else 0) + \
-          chase_penalty
+    # ━━━ 페널티 (⭐ v7: market_cap=0이면 페널티 안 줌) ━━━
+    pen = chase_penalty
+    mcap = m.get("market_cap", 0) or 0
+    if 0 < mcap < 50e6:        # 0보다 크고 5천만 달러 미만일 때만 -10
+        pen += 10
+    if m.get("has_dilution", False):
+        pen += 15
 
     final = round(clamp(raw - pen, 0, 100), 1)
 
@@ -236,7 +241,12 @@ def sqs(m: dict) -> dict:
 
 
 def estimate_ctb(si: float, dtc: float) -> tuple[float, float]:
-    """SI%+DTC 기반 결정론적 추정 (랜덤 제거 → 일관성 확보)"""
+    """SI%+DTC 기반 결정론적 추정 (랜덤 제거 → 일관성 확보)
+
+    실제 CTB(Cost To Borrow)는 IBKR/S3 Partners 같은 폐쇄적 데이터라
+    Polygon에서 직접 받을 수 없음. SI%와 DTC가 높을수록 차입 수요가 높아
+    CTB도 비례해서 상승하는 경험적 공식을 사용.
+    """
     if si <= 0 and dtc <= 0:
         return 0.0, 0.0
     ctb = round(clamp(si * 1.8 + dtc * 3.2, 0.3, 300), 1)
