@@ -1,13 +1,21 @@
-"""SQS(Squeeze Score) 점수 계산 — 매집 구간 선호 + 추격매수 방지
+"""SQS(Squeeze Score) 점수 계산 — v6
 
-v5 핵심 변경:
-- dist_52w 부호 원복: 52주 저점~중간 구간(매집 구간)에 가산점
-- 신고가 근처(>70% 도달) 페널티
-- vol_spike 가중치 5점 → 12점 (스퀴즈 핵심 트리거)
-- acc_score 가중치 8점 → 12점 (매집 = 스퀴즈 전조)
-- change_pct 페널티 추가: 당일 +10% 이상 추격매수 방지
-- 횡보 보너스: RSI 40~55 + 저변동성 = 매집 구간 가산점
-- estimate_ctb 랜덤 제거: 일관된 추정값
+v6 핵심 변경 (옵션 권한 없는 Polygon Starter 환경 최적화):
+- 옵션 관련 점수(감마/CP/UOA) 가중치 대폭 축소 (16점 → 4점)
+- 다크풀(매집 신호)/거래량 스파이크 가중치 강화
+- 매집(acc_score) 가중치 12점 → 18점 (핵심 신호로 격상)
+- SI%, 거래량 폭증, 매집 3개를 메인 축으로 재구성
+- 데이터 결손에 강한 가산점 구조 (대부분 종목이 50~70점 도달 가능)
+- 추격매수 페널티 유지 / 매집 횡보 보너스 강화
+
+만점 구조 (총 ≈ 125점, 100점 캡):
+  공매도(SI/DTC/CTB/Util): 50점
+  유동/거래(Float/Rot/Spike/Dist): 38점
+  매집/기술(Acc/RSI/MACD):  28점 + 횡보 보너스 7점
+  소셜/뉴스(Soc/Sen/Cat):   16점
+  옵션(Gam/CP/UOA):         4점  (데이터 들어오면 보너스)
+  이상거래(Z/DP/Event):     16점
+  펀더멘털:                 2점
 """
 import math
 
@@ -17,15 +25,15 @@ def clamp(v, lo, hi):
 
 
 def grade(s: float) -> str:
-    if s >= 85: return "IMMINENT"
-    if s >= 70: return "HIGH"
-    if s >= 55: return "WATCH"
-    if s >= 40: return "LOW"
+    if s >= 80: return "IMMINENT"
+    if s >= 65: return "HIGH"
+    if s >= 50: return "WATCH"
+    if s >= 35: return "LOW"
     return "NO_SQUEEZE"
 
 
 def sqs(m: dict) -> dict:
-    """v5 점수식 — 매집 구간 선호 + 추격매수 방지"""
+    """v6 점수식 — 옵션 없는 환경 최적화 + 매집 구간 선호"""
 
     # ━━━ 공매도 SI% (비선형 25점) ━━━
     si_raw = m.get("si_pct", 0)
@@ -41,50 +49,48 @@ def sqs(m: dict) -> dict:
     flt = clamp(1 - math.log10(max(fs, 1)) / 8, 0, 1) * 10 if fs > 0 else 0
     rot = clamp(m.get("rotation", 0) / 2, 0, 1) * 8
 
-    # ━━━ ✅ v5: 거래량 급증 (5점 → 12점, 스퀴즈 핵심 트리거) ━━━
-    # vol_spike 1.0 = 평균, 2.0 = 2배, 5.0 = 5배
+    # ━━━ 거래량 급증 (스퀴즈 핵심 트리거, 최대 12점) ━━━
     vs_raw = m.get("vol_spike", 1)
     if vs_raw >= 5.0:
         spk = 12.0
     elif vs_raw >= 3.0:
-        spk = 9.0 + (vs_raw - 3.0) / 2.0 * 3.0  # 3~5배: 9~12점
+        spk = 9.0 + (vs_raw - 3.0) / 2.0 * 3.0
     elif vs_raw >= 2.0:
-        spk = 5.0 + (vs_raw - 2.0) * 4.0  # 2~3배: 5~9점
+        spk = 5.0 + (vs_raw - 2.0) * 4.0
     elif vs_raw >= 1.5:
-        spk = 2.0 + (vs_raw - 1.5) * 6.0  # 1.5~2배: 2~5점
+        spk = 2.0 + (vs_raw - 1.5) * 6.0
+    elif vs_raw >= 1.2:
+        spk = (vs_raw - 1.2) / 0.3 * 2.0
     else:
         spk = 0.0
 
-    # ━━━ ✅ v5: dist_52w 매집 구간 선호 (부호 원복) ━━━
-    # dist_raw = 52주 저가 대비 현재 위치 (0=저가, 1=고가)
-    # 0~30%  : 깊은 저점 (매집 의심 → 강한 보너스)
-    # 30~60% : 매집 구간 (이상적 → 만점)
-    # 60~70% : 중립
-    # 70~100%: 이미 상승 (페널티)
+    # ━━━ dist_52w 매집 구간 선호 ━━━
     dist_raw = m.get("dist_52w", 0.5)
     if dist_raw <= 0.30:
-        dist = 6.0  # 깊은 저점 + 매집 신호 좋음
+        dist = 6.0
     elif dist_raw <= 0.60:
-        dist = 8.0  # 매집 구간 (Sweet Spot)
+        dist = 8.0
     elif dist_raw <= 0.70:
         dist = 4.0
     elif dist_raw <= 0.85:
         dist = 0.0
     else:
-        dist = -3.0  # 신고가 근처 = 이미 늦음
+        dist = -3.0
 
-    # ━━━ RSI (매집 구간 선호 강화) ━━━
+    # ━━━ RSI ━━━
     r14 = m.get("rsi14", 50)
-    if   30 <= r14 <= 45: rsi = 4.0   # 과매도~매집 (이상적)
-    elif 45 <  r14 <= 55: rsi = 3.0   # 횡보 매집
-    elif 55 <  r14 <= 65: rsi = 1.0   # 초기 상승
-    elif 65 <  r14 <= 75: rsi = -1.0  # 과열 시작
-    elif r14 > 75:        rsi = -3.0  # 명백한 과매수 (추격매수 위험)
-    elif r14 < 30:        rsi = 2.0   # 극단 과매도
+    if   30 <= r14 <= 45: rsi = 4.0
+    elif 45 <  r14 <= 55: rsi = 3.0
+    elif 55 <  r14 <= 65: rsi = 1.0
+    elif 65 <  r14 <= 75: rsi = -1.0
+    elif r14 > 75:        rsi = -3.0
+    elif r14 < 30:        rsi = 2.0
     else:                 rsi = 0.0
 
-    # ━━━ 감마 집중도 (옵션) ━━━
-    gam = clamp(m.get("gamma_conc", 0), 0, 1) * 8
+    # ━━━ ⭐ v6: 매집 신호 12점 → 18점 (핵심 신호로 격상) ━━━
+    # acc_score는 0~100 (Wyckoff + OBV + CMF 합산)
+    acc_score_raw = m.get("acc_score", 0)
+    acc = (acc_score_raw / 100) * 18
 
     # ━━━ MACD ━━━
     macd_score = 0.0
@@ -94,10 +100,6 @@ def sqs(m: dict) -> dict:
         macd_score = -3.0
     elif m.get("macd_histogram", 0) > 0:
         macd_score = 2.0
-
-    # ━━━ ✅ v5: 매집 신호 (8점 → 12점, 핵심 가중치) ━━━
-    acc_score_raw = m.get("acc_score", 0)
-    acc = (acc_score_raw / 100) * 12
 
     # ━━━ 소셜 (로그) ━━━
     sv = m.get("social_velocity", 0)
@@ -111,27 +113,37 @@ def sqs(m: dict) -> dict:
     sen = max(0, m.get("sentiment", 0)) * 4
     cat = 4.0 if m.get("has_catalyst", False) else 0.0
 
-    # ━━━ 옵션 - C/P Ratio (콜/풋 비율) ━━━
+    # ━━━ ⭐ v6: 옵션 관련 대폭 축소 (16점 → 4점) ━━━
+    # Polygon Options 권한 없는 환경에서 영구 0이므로 점수 비중 최소화
+    # 데이터 있으면 보너스로 작용
+    gam = clamp(m.get("gamma_conc", 0), 0, 1) * 2  # 8 → 2
+
     cp_ratio = m.get("call_put_ratio", 1.0)
     if cp_ratio >= 3.0:
-        cp_score = 4.0
-    elif cp_ratio >= 2.0:
-        cp_score = 2.5
-    elif cp_ratio >= 1.5:
         cp_score = 1.0
+    elif cp_ratio >= 2.0:
+        cp_score = 0.5
     else:
         cp_score = 0.0
 
-    # ━━━ 비정상 옵션 활동 (Unusual Options Activity) ━━━
     uoa = m.get("unusual_options_score", 0)
-    # unusual_options_score는 0~100 (polygon.py에서 그렇게 반환) 또는 0~1 둘 다 대응
-    if uoa > 1:
-        uoa_norm = uoa / 100.0
-    else:
-        uoa_norm = uoa
-    uoa_score = clamp(uoa_norm, 0, 1) * 4
+    uoa_norm = uoa / 100.0 if uoa > 1 else uoa
+    uoa_score = clamp(uoa_norm, 0, 1) * 1  # 4 → 1
 
-    # ━━━ 이상 거래 (Z-score 통계적 이상치) ━━━
+    # ━━━ ⭐ v6: 다크풀 강화 (4점 → 8점, 기관 매집 신호) ━━━
+    dark_pool = m.get("dark_pool_ratio", 0)
+    if dark_pool >= 0.6:
+        dp_score = 8.0
+    elif dark_pool >= 0.5:
+        dp_score = 5.0
+    elif dark_pool >= 0.4:
+        dp_score = 3.0
+    elif dark_pool >= 0.3:
+        dp_score = 1.0
+    else:
+        dp_score = 0.0
+
+    # ━━━ 이상 거래 Z-score ━━━
     vol_z = m.get("vol_zscore", 0)
     if vol_z >= 4:
         anom_score = 5.0
@@ -142,7 +154,7 @@ def sqs(m: dict) -> dict:
     else:
         anom_score = 0.0
 
-    # ━━━ 펀더멘털 신호 ━━━
+    # ━━━ 펀더멘털 ━━━
     fund_score = 0.0
     debt_eq = m.get("debt_to_equity", 0)
     if debt_eq > 5:
@@ -151,7 +163,7 @@ def sqs(m: dict) -> dict:
     if 0 < cash_runway < 6:
         fund_score -= 3.0
 
-    # ━━━ 어닝 임박 (이벤트) ━━━
+    # ━━━ 어닝 임박 ━━━
     days_to_earnings = m.get("days_to_earnings", 999)
     if 0 <= days_to_earnings <= 7:
         event_score = 4.0
@@ -160,35 +172,22 @@ def sqs(m: dict) -> dict:
     else:
         event_score = 0.0
 
-    # ━━━ 다크풀 거래량 비율 (기관 매집) ━━━
-    dark_pool = m.get("dark_pool_ratio", 0)
-    if dark_pool >= 0.6:
-        dp_score = 4.0
-    elif dark_pool >= 0.5:
-        dp_score = 2.5
-    elif dark_pool >= 0.4:
-        dp_score = 1.0
-    else:
-        dp_score = 0.0
-
-    # ━━━ 🆕 v5: 횡보 매집 보너스 ━━━
-    # RSI 40~55 + 저변동성(당일 ±3% 이내) + dist_52w 0.2~0.6
-    # = "조용히 매집 중인 종목" 가산점
+    # ━━━ ⭐ v6: 횡보 매집 보너스 강화 (최대 7점 → 10점) ━━━
     change_pct = m.get("change_pct", 0)
     consolidation_bonus = 0.0
     if (40 <= r14 <= 55 and
         abs(change_pct) <= 3.0 and
         0.20 <= dist_raw <= 0.60):
-        consolidation_bonus = 5.0
-        # 거래량까지 살짝 늘어나는 중이면 추가 보너스
+        consolidation_bonus = 6.0
         if vs_raw >= 1.3:
-            consolidation_bonus += 2.0  # 최대 7점
+            consolidation_bonus += 2.0
+        if acc_score_raw >= 50:  # 매집 점수도 높으면 추가 보너스
+            consolidation_bonus += 2.0
 
-    # ━━━ 🆕 v5: 추격매수 페널티 ━━━
-    # 당일 이미 +10% 이상 오른 종목은 점수 깎기
+    # ━━━ 추격매수 페널티 ━━━
     chase_penalty = 0.0
     if change_pct >= 30:
-        chase_penalty = 25.0  # +30% 이상: 거의 제외
+        chase_penalty = 25.0
     elif change_pct >= 20:
         chase_penalty = 15.0
     elif change_pct >= 15:
@@ -205,7 +204,6 @@ def sqs(m: dict) -> dict:
            fund_score + event_score + dp_score +
            consolidation_bonus)
 
-    # 기존 페널티
     pen = (10 if m.get("market_cap", 1e9) < 50e6 else 0) + \
           (15 if m.get("has_dilution", False) else 0) + \
           chase_penalty
@@ -230,7 +228,6 @@ def sqs(m: dict) -> dict:
             "fundamental_score": round(fund_score, 2),
             "event_score": round(event_score, 2),
             "darkpool_score": round(dp_score, 2),
-            # 🆕 신규 지표
             "consolidation_bonus": round(consolidation_bonus, 2),
             "chase_penalty": round(chase_penalty, 2),
             "penalty": round(pen, 2), "raw_total": round(raw, 2),
@@ -239,19 +236,9 @@ def sqs(m: dict) -> dict:
 
 
 def estimate_ctb(si: float, dtc: float) -> tuple[float, float]:
-    """SI%+DTC 기반 결정론적 추정 (랜덤 제거 → 일관성 확보)
-
-    실제 CTB(Cost To Borrow)는 폐쇄적 데이터라 정확히 구할 수 없음.
-    SI%와 DTC가 높을수록 차입 수요가 높아 CTB도 비례해서 상승하는
-    경험적 공식을 사용.
-    """
+    """SI%+DTC 기반 결정론적 추정 (랜덤 제거 → 일관성 확보)"""
     if si <= 0 and dtc <= 0:
         return 0.0, 0.0
-
-    # CTB 추정: SI% × 1.8 + DTC × 3.2 (경험적 공식)
     ctb = round(clamp(si * 1.8 + dtc * 3.2, 0.3, 300), 1)
-
-    # 차입 가능 주식 사용률 추정
     util = round(clamp(si * 2.2 + dtc * 1.8, 0, 100), 1)
-
     return ctb, util
