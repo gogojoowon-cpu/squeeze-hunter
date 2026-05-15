@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from app import state
 from app.config import WS_ENABLED
 from app.pipeline.loader import init_data
-from app.pipeline.enricher import enrich_all, start_tick_thread
+from app.pipeline.enricher import start_tick_thread
 from app.api.routes import register_routes, push_loop
 
 
@@ -32,16 +32,13 @@ def _bootstrap():
         print("🚀 Short Squeeze Hunter v3 부팅")
         print("=" * 60)
 
-        # 1) 티커 + 기본 데이터 로딩
+        # 1) 티커 + 기본 데이터 로딩 + 보강 (init_data가 내부에서 enrich_all 호출)
         init_data()
 
-        # 2) 상세 보강 (SI, SV, Float, MACD, 옵션, 펀더멘털, 뉴스, 이벤트)
-        enrich_all()
-
-        # 3) Tick 루프 시작 (5초 간격)
+        # 2) Tick 루프 시작 (5초 간격)
         start_tick_thread()
 
-        # 4) Polygon WebSocket 시작 (실시간 가격 스트리밍)
+        # 3) Polygon WebSocket 시작 (실시간 가격 스트리밍)
         if WS_ENABLED:
             try:
                 from app.providers.polygon_ws import start_ws_thread
@@ -57,6 +54,7 @@ def _bootstrap():
         print(f"❌ 부팅 실패: {e}")
         import traceback
         traceback.print_exc()
+
 
 
 # ============================================================
