@@ -1,1032 +1,1252 @@
-"""
-Short Squeeze Hunter v3 - Web UI
-단일 HTML 페이지 (Chart.js + WebSocket + 모든 탭)
-"""
+"""Short Squeeze Hunter v3 — 통합 단일 페이지 UI"""
 
 HTML_PAGE = r"""<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🚀 Short Squeeze Hunter v3</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🔥 Short Squeeze Hunter v3</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-:root {
-  --bg: #0a0a14;
-  --card-bg: #14142a;
-  --card-bg-2: #1a1a35;
-  --border: #2a2a4a;
-  --text: #e0e0ff;
-  --text-dim: #8888aa;
-  --accent: #6c7dff;
-  --up: #26d97f;
-  --down: #ff5577;
-  --warn: #ffb84d;
-  --critical: #ff3333;
-  --imminent: #ff00aa;
-  --high: #ff8800;
-  --medium: #ffcc00;
-  --low: #66cc66;
-}
+  :root {
+    --bg: #0a0e1a;
+    --bg2: #131826;
+    --bg3: #1a2138;
+    --border: #2a3454;
+    --text: #e4e8f0;
+    --text-dim: #8a93a8;
+    --accent: #4a9eff;
+    --green: #00d68f;
+    --red: #ff5470;
+    --orange: #ff9f43;
+    --yellow: #feca57;
+    --purple: #a55eea;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow-x: hidden;
+  }
+  a { color: var(--accent); text-decoration: none; }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+  /* ============ 헤더 ============ */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { font-size: 18px; font-weight: 700; }
+  .logo .v { color: var(--accent); font-size: 12px; margin-left: 4px; }
+  .status-bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .status-dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-dot.off { background: var(--red); }
+  #marketStatus { font-weight: 600; }
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-}
+  /* ============ 탭 ============ */
+  .tabs {
+    display: flex;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    padding: 12px 18px;
+    cursor: pointer;
+    color: var(--text-dim);
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
 
-header {
-  background: linear-gradient(135deg, #14142a 0%, #1a1a35 100%);
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
+  /* ============ 메인 ============ */
+  main { padding: 20px; }
+  .panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .panel h2 {
+    font-size: 15px;
+    margin-bottom: 12px;
+    color: var(--text);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel h2 .count {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 400;
+  }
 
-header h1 {
-  font-size: 1.3em;
-  background: linear-gradient(90deg, #6c7dff, #ff5577);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
+  /* ============ 필터 ============ */
+  .filter-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .filter-bar input,
+  .filter-bar select {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  .filter-bar input { width: 120px; }
+  .filter-bar button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .filter-bar button:hover { opacity: 0.85; }
+  .filter-bar .info {
+    margin-left: auto;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
 
-.status-bar {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  font-size: 0.85em;
-  color: var(--text-dim);
-}
+  /* ============ 테이블 (PC) ============ */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  thead { background: var(--bg3); position: sticky; top: 0; }
+  th {
+    padding: 10px 8px;
+    text-align: left;
+    color: var(--text-dim);
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  th:hover { color: var(--text); }
+  th .arrow { color: var(--accent); margin-left: 2px; }
+  td {
+    padding: 8px;
+    border-bottom: 1px solid rgba(42, 52, 84, 0.5);
+    white-space: nowrap;
+  }
+  tbody tr { cursor: pointer; transition: background 0.1s; }
+  tbody tr:hover { background: var(--bg3); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.sym { font-weight: 700; }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
 
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #666;
-  display: inline-block;
-  margin-right: 5px;
-}
-.dot.on { background: var(--up); box-shadow: 0 0 8px var(--up); }
+  /* 등급 배지 */
+  .grade {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .g-IMMINENT { background: var(--red); color: white; }
+  .g-HIGH { background: var(--orange); color: white; }
+  .g-WATCH { background: var(--yellow); color: #333; }
+  .g-NORMAL { background: var(--bg3); color: var(--text-dim); }
 
-.tabs {
-  display: flex;
-  gap: 4px;
-  padding: 10px 24px 0;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
-}
+  /* 점수 색상 */
+  .s-high { color: var(--red); font-weight: 700; }
+  .s-mid { color: var(--orange); font-weight: 600; }
+  .s-low { color: var(--text-dim); }
 
-.tab {
-  background: transparent;
-  color: var(--text-dim);
-  border: none;
-  padding: 10px 18px;
-  cursor: pointer;
-  font-size: 0.92em;
-  border-bottom: 2px solid transparent;
-  transition: all 0.2s;
-}
-.tab:hover { color: var(--text); }
-.tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
+  /* ============ 모바일 카드 ============ */
+  .mobile-card-list { display: none; }
+  .mobile-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+  .mobile-card:active { background: var(--bg2); }
+  .mobile-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .mobile-card-sym {
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .mobile-card-name {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .mobile-card-score {
+    font-size: 24px;
+    font-weight: 800;
+  }
+  .mobile-card-mid {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .mobile-card-price {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .mobile-card-change {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .mobile-card-bottom {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    font-size: 11px;
+  }
+  .mc-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .mc-stat-label {
+    color: var(--text-dim);
+    font-size: 10px;
+  }
+  .mc-stat-value {
+    font-weight: 600;
+    font-size: 12px;
+  }
 
-main {
-  padding: 20px 24px;
-  max-width: 1600px;
-  margin: 0 auto;
-}
+  /* ============ 페이지네이션 ============ */
+  .pagination {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .pagination button {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    min-width: 32px;
+  }
+  .pagination button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    font-weight: 700;
+  }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.tab-content { display: none; }
-.tab-content.active { display: block; }
+  /* ============ 테마/누적/이상거래/이벤트/알림 카드 ============ */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .theme-card, .anom-card, .event-card, .alert-card, .acc-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .theme-card h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .theme-card h3 .cnt { color: var(--text-dim); font-size: 11px; }
+  .theme-list { font-size: 12px; }
+  .theme-list .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+  }
+  .theme-list .row:hover { color: var(--accent); cursor: pointer; }
 
-h2 {
-  font-size: 1.2em;
-  margin-bottom: 14px;
-  color: var(--text);
-}
-h3 {
-  font-size: 1em;
-  margin: 14px 0 8px;
-  color: var(--accent);
-}
+  /* 이상거래 / 알림 레벨 */
+  .badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-right: 4px;
+  }
+  .lv-critical { background: var(--red); color: white; }
+  .lv-high { background: var(--orange); color: white; }
+  .lv-info { background: var(--accent); color: white; }
 
-.filter-bar {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-  align-items: center;
-}
+  .anom-card .anom-head,
+  .event-card .event-head,
+  .alert-card .alert-head {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .anom-card .anom-msg,
+  .event-card .event-msg,
+  .alert-card .alert-msg {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .anom-card .anom-time,
+  .alert-card .alert-time {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
 
-.filter-bar select,
-.filter-bar input,
-.filter-bar button {
-  background: var(--card-bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  padding: 7px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9em;
-}
-.filter-bar button:hover {
-  background: var(--card-bg-2);
-  border-color: var(--accent);
-}
-.filter-bar input[type="text"] { cursor: text; min-width: 120px; }
+  /* 누적 신호 */
+  .acc-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .acc-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+  .acc-tag {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+  }
+  .tier-stats {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .tier-stat {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .tier-stat .v { font-size: 18px; font-weight: 700; }
 
-/* === 메인 테이블 === */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: var(--card-bg);
-  border-radius: 8px;
-  overflow: hidden;
-  font-size: 0.88em;
-}
+  /* ============ 시스템 상태 ============ */
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .status-box {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .status-box .label { color: var(--text-dim); font-size: 11px; }
+  .status-box .value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .coverage-table {
+    width: 100%;
+    font-size: 12px;
+  }
+  .coverage-bar {
+    background: var(--bg);
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    width: 100%;
+  }
+  .coverage-bar-fill {
+    background: var(--green);
+    height: 100%;
+    transition: width 0.3s;
+  }
+  .coverage-bar-fill.low { background: var(--red); }
+  .coverage-bar-fill.mid { background: var(--orange); }
 
-th {
-  background: var(--card-bg-2);
-  padding: 10px 12px;
-  text-align: left;
-  font-weight: 600;
-  color: var(--text-dim);
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  user-select: none;
-}
-th:hover { color: var(--accent); }
-th.sort-asc::after { content: ' ▲'; color: var(--accent); }
-th.sort-desc::after { content: ' ▼'; color: var(--accent); }
+  /* ============ 상세 모달 ============ */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 1000;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal-overlay.show { display: block; }
+  .modal {
+    background: var(--bg2);
+    margin: 40px auto;
+    max-width: 900px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 20px;
+    position: relative;
+  }
+  .modal-close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-dim);
+    background: none;
+    border: none;
+    width: 32px;
+    height: 32px;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal h2 { font-size: 22px; margin-bottom: 4px; }
+  .modal .subtitle { color: var(--text-dim); margin-bottom: 16px; }
+  .modal-section {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .modal-section h3 {
+    font-size: 13px;
+    margin-bottom: 8px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 8px;
+  }
+  .metric-item {
+    background: var(--bg2);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+  .metric-item .lbl { color: var(--text-dim); font-size: 10px; }
+  .metric-item .val { font-size: 13px; font-weight: 600; margin-top: 2px; }
+  .warning-banner {
+    background: rgba(255, 84, 112, 0.15);
+    border: 1px solid var(--red);
+    color: var(--red);
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    font-weight: 600;
+  }
 
-td {
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--border);
-}
+  /* ============ 로딩 ============ */
+  .loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-dim);
+  }
+  .progress-bar {
+    background: var(--bg3);
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    max-width: 400px;
+    margin: 16px auto;
+  }
+  .progress-bar-fill {
+    background: var(--accent);
+    height: 100%;
+    transition: width 0.3s;
+  }
 
-tbody tr {
-  cursor: pointer;
-  transition: background 0.15s;
-}
-tbody tr:hover { background: var(--card-bg-2); }
+  /* ============ 모바일 반응형 ============ */
+  @media (max-width: 768px) {
+    header { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
+    .logo { font-size: 16px; }
+    .status-bar { font-size: 10px; gap: 6px; flex-wrap: wrap; }
+    .tabs { padding: 0 12px; }
+    .tab { padding: 10px 12px; font-size: 13px; }
+    main { padding: 12px; }
+    .panel { padding: 12px; }
 
-.sym { font-weight: 700; color: var(--accent); }
-.up { color: var(--up); }
-.down { color: var(--down); }
-.muted { color: var(--text-dim); }
+    /* PC 테이블 숨기고 모바일 카드 보이기 */
+    .table-wrap { display: none; }
+    .mobile-card-list { display: block; }
 
-/* === 점수 바 === */
-.score-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 110px;
-}
-.score-bar {
-  flex: 1;
-  height: 6px;
-  background: var(--border);
-  border-radius: 3px;
-  overflow: hidden;
-  min-width: 50px;
-}
-.score-bar > div {
-  height: 100%;
-  transition: width 0.3s;
-}
-.score-val { font-weight: 700; min-width: 38px; text-align: right; }
+    .filter-bar { gap: 6px; }
+    .filter-bar input,
+    .filter-bar select { width: 100%; font-size: 14px; }
+    .filter-bar input.short { width: calc(50% - 3px); }
+    .filter-bar .info { width: 100%; margin-left: 0; }
 
-/* === 등급 배지 === */
-.grade {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.75em;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-.grade.IMMINENT { background: var(--imminent); color: white; }
-.grade.HIGH { background: var(--high); color: white; }
-.grade.MEDIUM { background: var(--medium); color: #333; }
-.grade.LOW { background: var(--low); color: white; }
-.grade.WATCH { background: var(--border); color: var(--text-dim); }
+    .card-grid {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .modal { margin: 0; border-radius: 0; min-height: 100vh; }
+    .modal h2 { font-size: 18px; }
+    .metric-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .status-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .tier-stats { gap: 6px; }
+    .tier-stat { font-size: 11px; padding: 6px 10px; }
+    .tier-stat .v { font-size: 16px; }
+  }
 
-/* === 매집 티어 === */
-.tier {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.72em;
-  font-weight: 700;
-}
-.tier.STRONG { background: #ff3366; color: white; }
-.tier.ACTIVE { background: #ff8800; color: white; }
-.tier.EMERGING { background: #ffcc00; color: #222; }
-.tier.WEAK { background: #444; color: #999; }
-
-/* === 페이지네이션 === */
-.pager {
-  display: flex;
-  gap: 6px;
-  justify-content: center;
-  margin: 16px 0;
-}
-.pager button {
-  background: var(--card-bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  padding: 6px 12px;
-  border-radius: 5px;
-  cursor: pointer;
-}
-.pager button.active {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
-}
-.pager button:disabled { opacity: 0.4; cursor: not-allowed; }
-
-/* === 카드 / 알림 / 이벤트 === */
-.card-list { display: flex; flex-direction: column; gap: 6px; }
-
-.anom-card, .event-card, .alert-card {
-  background: var(--card-bg);
-  padding: 11px 16px;
-  border-radius: 7px;
-  cursor: pointer;
-  transition: transform 0.12s, background 0.2s;
-}
-.anom-card:hover, .event-card:hover, .alert-card:hover {
-  transform: translateX(4px);
-  background: var(--card-bg-2);
-}
-
-.anom-head { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
-.anom-head .badge { padding: 2px 8px; border-radius: 4px; color: white; font-size: 0.72em; font-weight: 700; }
-.anom-head .type { color: var(--text-dim); font-size: 0.88em; }
-.anom-body { display: flex; gap: 14px; align-items: center; font-size: 0.88em; color: var(--text-dim); flex-wrap: wrap; }
-
-.event-card {
-  display: grid;
-  grid-template-columns: 70px 1fr 80px 100px 80px 80px;
-  gap: 10px;
-  align-items: center;
-  font-size: 0.9em;
-}
-.event-card .days { color: var(--warn); font-weight: 700; }
-.event-card .extra { color: var(--up); }
-
-.event-section { margin-bottom: 22px; }
-
-.alert-card {
-  display: grid;
-  grid-template-columns: 60px 100px 1fr 90px;
-  gap: 10px;
-  align-items: center;
-  border-left: 3px solid var(--border);
-}
-.alert-card.critical { border-left-color: var(--critical); }
-.alert-card.high { border-left-color: var(--high); }
-.alert-card.info { border-left-color: var(--accent); }
-.alert-card .time { color: var(--text-dim); font-size: 0.8em; }
-
-.warning-banner {
-  background: linear-gradient(90deg, #ff550022, transparent);
-  border-left: 3px solid var(--high);
-  padding: 8px 12px;
-  margin: 8px 0;
-  color: #ffaa66;
-  font-size: 0.9em;
-  border-radius: 4px;
-}
-.warn-item { padding: 2px 0; }
-
-/* === 테마 그룹 === */
-.theme-group {
-  background: var(--card-bg);
-  padding: 14px;
-  margin-bottom: 14px;
-  border-radius: 8px;
-}
-.theme-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.theme-name { font-size: 1.05em; font-weight: 700; color: var(--accent); }
-.theme-stats { color: var(--text-dim); font-size: 0.85em; }
-
-/* === 상세 모달 === */
-.modal-bg {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.7);
-  display: none;
-  justify-content: center;
-  align-items: flex-start;
-  z-index: 1000;
-  overflow-y: auto;
-  padding: 30px 0;
-}
-.modal-bg.open { display: flex; }
-
-.modal {
-  background: var(--card-bg);
-  width: 90%;
-  max-width: 1000px;
-  border-radius: 10px;
-  padding: 20px 24px;
-  position: relative;
-}
-.modal-close {
-  position: absolute;
-  top: 14px;
-  right: 18px;
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 1.4em;
-  cursor: pointer;
-}
-.modal-close:hover { color: var(--down); }
-
-.detail-section {
-  background: var(--card-bg-2);
-  padding: 14px;
-  margin: 10px 0;
-  border-radius: 7px;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 10px;
-  margin-top: 10px;
-}
-.metric-grid > div {
-  background: var(--bg);
-  padding: 8px 10px;
-  border-radius: 6px;
-}
-.metric-grid label {
-  display: block;
-  color: var(--text-dim);
-  font-size: 0.76em;
-  margin-bottom: 3px;
-}
-.metric-grid b { color: var(--text); font-size: 1em; }
-
-.chart-wrap { height: 240px; margin-top: 10px; }
-
-.breakdown-list { list-style: none; }
-.breakdown-list li {
-  display: grid;
-  grid-template-columns: 1fr 60px 80px;
-  gap: 8px;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.88em;
-}
-.breakdown-list .label { color: var(--text-dim); }
-.breakdown-list .val { text-align: right; }
-.breakdown-list .max { text-align: right; color: var(--text-dim); font-size: 0.85em; }
-
-/* === 매집 상세 === */
-.acc-signals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 6px;
-}
-.acc-tag {
-  background: var(--bg);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.78em;
-  color: var(--up);
-}
-
-.empty {
-  color: var(--text-dim);
-  padding: 30px;
-  text-align: center;
-}
-
-.flash-up { animation: flashUp 0.6s; }
-.flash-down { animation: flashDown 0.6s; }
-@keyframes flashUp { 0% { background: #26d97f44; } 100% { background: transparent; } }
-@keyframes flashDown { 0% { background: #ff557744; } 100% { background: transparent; } }
-
-@media (max-width: 768px) {
-  header { padding: 10px 14px; flex-direction: column; gap: 8px; }
-  main { padding: 14px; }
-  table { font-size: 0.78em; }
-  th, td { padding: 7px 6px; }
-  .event-card { grid-template-columns: 1fr 1fr; gap: 6px; }
-  .modal { width: 96%; padding: 16px; }
-}
+  @media (max-width: 480px) {
+    .mobile-card-bottom {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>🚀 Short Squeeze Hunter v3</h1>
+  <div>
+    <span class="logo">🔥 Short Squeeze Hunter <span class="v">v3</span></span>
+  </div>
   <div class="status-bar">
-    <span><span id="wsDot" class="dot"></span><span id="wsText">○ 연결중</span></span>
-    <span id="loadStatus">로딩...</span>
-    <span id="marketStatus" class="muted">시장 확인중</span>
+    <div class="status-item">
+      <div id="wsDot" class="status-dot"></div>
+      <span id="wsLabel">연결 중...</span>
+    </div>
+    <div class="status-item">
+      <span id="marketStatus">시장 확인 중...</span>
+    </div>
+    <div class="status-item">
+      <span id="loadStatus">로딩...</span>
+    </div>
   </div>
 </header>
 
-<nav class="tabs">
-  <button class="tab active" data-tab="dashboard">📊 대시보드</button>
-  <button class="tab" data-tab="themes">🏷️ 테마</button>
-  <button class="tab" data-tab="accumulation">📈 매집신호</button>
-  <button class="tab" data-tab="anomalies">⚠️ 이상거래</button>
-  <button class="tab" data-tab="events">📅 이벤트</button>
-  <button class="tab" data-tab="alerts">🔔 알림</button>
-  <button class="tab" data-tab="status">⚙️ 상태</button>
-</nav>
+<div class="tabs">
+  <div class="tab active" data-tab="main">📊 대시보드</div>
+  <div class="tab" data-tab="themes">🎯 테마</div>
+  <div class="tab" data-tab="accumulation">💎 누적신호</div>
+  <div class="tab" data-tab="anomalies">⚡ 이상거래</div>
+  <div class="tab" data-tab="events">📅 이벤트</div>
+  <div class="tab" data-tab="alerts">🔔 알림</div>
+  <div class="tab" data-tab="status">⚙️ 상태</div>
+</div>
 
 <main>
   <!-- ===== 대시보드 ===== -->
-  <div id="tab-dashboard" class="tab-content active">
-    <div class="filter-bar">
-      <input type="text" id="searchSym" placeholder="🔍 심볼 검색" oninput="renderMain()">
-      <select id="filterGrade" onchange="renderMain()">
-        <option value="">전체 등급</option>
-        <option value="IMMINENT">IMMINENT</option>
-        <option value="HIGH">HIGH</option>
-        <option value="MEDIUM">MEDIUM</option>
-        <option value="LOW">LOW</option>
-        <option value="WATCH">WATCH</option>
-      </select>
-      <select id="filterMinScore" onchange="renderMain()">
-        <option value="0">점수 전체</option>
-        <option value="40">40+</option>
-        <option value="60">60+</option>
-        <option value="75">75+</option>
-        <option value="90">90+</option>
-      </select>
-      <select id="pageSize" onchange="renderMain()">
-        <option value="50">50개</option>
-        <option value="100" selected>100개</option>
-        <option value="200">200개</option>
-      </select>
-      <span class="muted" id="resultCount"></span>
+  <section id="tab-main" class="tab-content">
+    <div class="panel">
+      <h2>실시간 스코어보드 <span class="count" id="mainCount">0개</span></h2>
+      <div class="filter-bar">
+        <input type="text" id="filterSym" placeholder="심볼 검색..." class="short">
+        <select id="filterGrade">
+          <option value="">모든 등급</option>
+          <option value="IMMINENT">IMMINENT</option>
+          <option value="HIGH">HIGH</option>
+          <option value="WATCH">WATCH</option>
+          <option value="NORMAL">NORMAL</option>
+        </select>
+        <input type="number" id="filterMinScore" placeholder="최소 점수" class="short">
+        <button onclick="applyFilter()">필터</button>
+        <span class="info" id="filterInfo"></span>
+      </div>
+
+      <!-- PC 테이블 -->
+      <div class="table-wrap">
+        <table id="mainTable">
+          <thead>
+            <tr>
+              <th data-sort="symbol">심볼</th>
+              <th data-sort="name">이름</th>
+              <th data-sort="theme">테마</th>
+              <th class="num" data-sort="price">가격</th>
+              <th class="num" data-sort="change_pct">변동%</th>
+              <th class="num" data-sort="volume">거래량</th>
+              <th class="num" data-sort="sqs_score">SQS</th>
+              <th data-sort="grade">등급</th>
+              <th class="num" data-sort="si_pct">SI%</th>
+              <th class="num" data-sort="ctb">CTB%</th>
+              <th class="num" data-sort="rsi14">RSI</th>
+            </tr>
+          </thead>
+          <tbody id="mainBody"></tbody>
+        </table>
+      </div>
+
+      <!-- 모바일 카드 -->
+      <div class="mobile-card-list" id="mainCardList"></div>
+
+      <div class="pagination" id="pagination"></div>
     </div>
-    <table id="mainTable">
-      <thead>
-        <tr>
-          <th data-sort="symbol">심볼</th>
-          <th data-sort="price">가격</th>
-          <th data-sort="change_pct">변동%</th>
-          <th data-sort="volume">거래량</th>
-          <th data-sort="si_pct">SI%</th>
-          <th data-sort="ctb">CTB%</th>
-          <th data-sort="float_shares">유동주식</th>
-          <th data-sort="rsi14">RSI</th>
-          <th data-sort="acc_score">매집</th>
-          <th data-sort="sqs_score" class="sort-desc">SQS 점수</th>
-          <th>등급</th>
-        </tr>
-      </thead>
-      <tbody id="mainTbody"></tbody>
-    </table>
-    <div class="pager" id="mainPager"></div>
-  </div>
+  </section>
 
   <!-- ===== 테마 ===== -->
-  <div id="tab-themes" class="tab-content">
-    <div id="themeList"></div>
-  </div>
-
-  <!-- ===== 매집신호 ===== -->
-  <div id="tab-accumulation" class="tab-content">
-    <div class="filter-bar">
-      <select id="accMinScore" onchange="loadAccumulation()">
-        <option value="40">매집점수 40+</option>
-        <option value="60" selected>60+</option>
-        <option value="75">75+ (STRONG)</option>
-      </select>
-      <button onclick="loadAccumulation()">새로고침</button>
-      <span class="muted" id="accStats"></span>
+  <section id="tab-themes" class="tab-content" style="display:none">
+    <div class="panel">
+      <h2>테마별 종목 <span class="count" id="themesCount"></span></h2>
+      <div id="themesGrid" class="card-grid"><div class="loading">로딩 중...</div></div>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>심볼</th>
-          <th>가격</th>
-          <th>티어</th>
-          <th>매집점수</th>
-          <th>OBV</th>
-          <th>CMF</th>
-          <th>폭증일</th>
-          <th>매집/분산</th>
-          <th>시그널</th>
-        </tr>
-      </thead>
-      <tbody id="accTbody"></tbody>
-    </table>
-  </div>
+  </section>
+
+  <!-- ===== 누적신호 ===== -->
+  <section id="tab-accumulation" class="tab-content" style="display:none">
+    <div class="panel">
+      <h2>스마트머니 누적 신호 <span class="count" id="accCount"></span></h2>
+      <div id="tierStats" class="tier-stats"></div>
+      <div id="accGrid" class="card-grid"><div class="loading">로딩 중...</div></div>
+    </div>
+  </section>
 
   <!-- ===== 이상거래 ===== -->
-  <div id="tab-anomalies" class="tab-content">
-    <div class="filter-bar">
-      <select id="anomSeverity" onchange="loadAnomalies()">
-        <option value="">전체 등급</option>
-        <option value="critical">🔴 Critical</option>
-        <option value="high">🟠 High</option>
-        <option value="info">🔵 Info</option>
-      </select>
-      <button onclick="loadAnomalies()">새로고침</button>
-      <span class="muted" id="anomStats"></span>
+  <section id="tab-anomalies" class="tab-content" style="display:none">
+    <div class="panel">
+      <h2>이상거래 탐지 <span class="count" id="anomCount"></span></h2>
+      <div class="filter-bar">
+        <select id="anomSeverity">
+          <option value="">전체</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="info">Info</option>
+        </select>
+        <button onclick="loadAnomalies()">새로고침</button>
+      </div>
+      <div id="anomGrid" class="card-grid"><div class="loading">로딩 중...</div></div>
     </div>
-    <div id="anomList" class="card-list"></div>
-  </div>
+  </section>
 
   <!-- ===== 이벤트 ===== -->
-  <div id="tab-events" class="tab-content">
-    <div class="filter-bar">
-      <select id="eventDays" onchange="loadEvents()">
-        <option value="3">3일 이내</option>
-        <option value="7" selected>7일 이내</option>
-        <option value="14">14일 이내</option>
-        <option value="30">30일 이내</option>
-      </select>
-      <button onclick="loadEvents()">새로고침</button>
+  <section id="tab-events" class="tab-content" style="display:none">
+    <div class="panel">
+      <h2>예정 이벤트 <span class="count" id="eventsCount"></span></h2>
+      <div class="filter-bar">
+        <select id="eventDays">
+          <option value="3">3일 이내</option>
+          <option value="7" selected>7일 이내</option>
+          <option value="14">14일 이내</option>
+          <option value="30">30일 이내</option>
+        </select>
+        <button onclick="loadEvents()">새로고침</button>
+      </div>
+      <div id="eventsContainer"><div class="loading">로딩 중...</div></div>
     </div>
-    <div class="event-section">
-      <h3>📊 어닝 발표</h3>
-      <div id="eventEarnings" class="card-list"></div>
-    </div>
-    <div class="event-section">
-      <h3>💰 배당락</h3>
-      <div id="eventDividends" class="card-list"></div>
-    </div>
-    <div class="event-section">
-      <h3>✂️ 주식 분할</h3>
-      <div id="eventSplits" class="card-list"></div>
-    </div>
-  </div>
+  </section>
 
   <!-- ===== 알림 ===== -->
-  <div id="tab-alerts" class="tab-content">
-    <div class="filter-bar">
-      <select id="alertLevel" onchange="loadAlerts()">
-        <option value="">전체</option>
-        <option value="critical">🔴 Critical</option>
-        <option value="high">🟠 High</option>
-        <option value="info">🔵 Info</option>
-      </select>
-      <button onclick="loadAlerts()">새로고침</button>
+  <section id="tab-alerts" class="tab-content" style="display:none">
+    <div class="panel">
+      <h2>최근 알림 <span class="count" id="alertsCount"></span></h2>
+      <div class="filter-bar">
+        <select id="alertLevel">
+          <option value="">전체</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="info">Info</option>
+        </select>
+        <button onclick="loadAlerts()">새로고침</button>
+      </div>
+      <div id="alertsGrid" class="card-grid"><div class="loading">로딩 중...</div></div>
     </div>
-    <div id="alertList" class="card-list"></div>
-  </div>
+  </section>
 
-  <!-- ===== 상태 ===== -->
-  <div id="tab-status" class="tab-content">
-    <h3>시스템 상태</h3>
-    <div id="sysStatus" class="metric-grid"></div>
-    <h3>데이터 커버리지</h3>
-    <table>
-      <thead><tr><th>필드</th><th>커버리지</th></tr></thead>
-      <tbody id="covTbody"></tbody>
-    </table>
-    <h3>점수 분포</h3>
-    <div class="chart-wrap"><canvas id="scoreDistChart"></canvas></div>
-    <button onclick="loadStatus()" style="margin-top:14px;background:var(--accent);color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">새로고침</button>
-  </div>
+  <!-- ===== 시스템 상태 ===== -->
+  <section id="tab-status" class="tab-content" style="display:none">
+    <div class="panel">
+      <h2>시스템 상태</h2>
+      <div id="statusGrid" class="status-grid"><div class="loading">로딩 중...</div></div>
+    </div>
+    <div class="panel">
+      <h2>데이터 커버리지</h2>
+      <table class="coverage-table" id="coverageTable"></table>
+    </div>
+    <div class="panel">
+      <h2>점수 분포</h2>
+      <canvas id="scoreDistChart" height="100"></canvas>
+    </div>
+  </section>
 </main>
 
-<!-- ===== 상세 모달 ===== -->
-<div id="detailModal" class="modal-bg" onclick="if(event.target===this)closeDetail()">
+<!-- 상세 모달 -->
+<div id="detailModal" class="modal-overlay" onclick="if(event.target===this)closeDetail()">
   <div class="modal">
-    <button class="modal-close" onclick="closeDetail()">✕</button>
+    <button class="modal-close" onclick="closeDetail()">×</button>
     <div id="detailBody"></div>
   </div>
 </div>
+
 """
+
 HTML_PAGE += r"""
 <script>
 // ============================================================
 // 전역 상태
 // ============================================================
-const STATE = {
-  all: [],                // 전체 종목 [{symbol, ...}]
-  byMap: {},              // symbol -> row
-  page: 1,
-  sortKey: 'sqs_score',
-  sortDesc: true,
-  ws: null,
-  wsRetry: 0,
-  ready: false,
-  detailSym: null,
-  charts: {},             // 차트 인스턴스 캐시
-};
+let allRows = [];        // 전체 종목 (서버 스냅샷)
+let filteredRows = [];   // 필터/정렬 후
+let sortKey = "sqs_score";
+let sortDir = "desc";
+let currentPage = 1;
+const PAGE_SIZE_PC = 50;
+const PAGE_SIZE_MOBILE = 20;
+let ws = null;
+let wsReconnectTimer = null;
+let detailCharts = { history: null, breakdown: null };
+
+const isMobile = () => window.innerWidth <= 768;
 
 // ============================================================
-// 유틸리티
+// 유틸
 // ============================================================
-function fmtNum(n, digits = 2) {
-  if (n === null || n === undefined || isNaN(n)) return '-';
-  if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(digits) + 'B';
-  if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(digits) + 'M';
-  if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(digits) + 'K';
-  return Number(n).toFixed(digits);
+function fmtNum(v, digits) {
+  if (v === null || v === undefined || isNaN(v)) return "-";
+  digits = digits ?? 2;
+  return Number(v).toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  });
 }
-
-function fmtPct(n, digits = 2) {
-  if (n === null || n === undefined || isNaN(n)) return '-';
-  const s = Number(n).toFixed(digits);
-  return (n > 0 ? '+' : '') + s + '%';
+function fmtInt(v) {
+  if (v === null || v === undefined || isNaN(v)) return "-";
+  return Number(v).toLocaleString("en-US");
 }
-
-function fmtPrice(n) {
-  if (!n || n <= 0) return '-';
-  if (n < 1) return '$' + n.toFixed(4);
-  if (n < 10) return '$' + n.toFixed(3);
-  return '$' + n.toFixed(2);
+function fmtVol(v) {
+  if (!v || isNaN(v)) return "-";
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + "B";
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
+  return String(v);
 }
-
+function fmtPct(v, digits) {
+  if (v === null || v === undefined || isNaN(v)) return "-";
+  digits = digits ?? 2;
+  return Number(v).toFixed(digits) + "%";
+}
+function fmtMcap(v) {
+  if (!v || isNaN(v)) return "-";
+  if (v >= 1e12) return "$" + (v / 1e12).toFixed(2) + "T";
+  if (v >= 1e9) return "$" + (v / 1e9).toFixed(2) + "B";
+  if (v >= 1e6) return "$" + (v / 1e6).toFixed(2) + "M";
+  return "$" + fmtInt(v);
+}
 function fmtTime(ts) {
-  if (!ts) return '-';
+  if (!ts) return "-";
   const d = new Date(ts * 1000);
-  const now = new Date();
-  const diff = (now - d) / 1000;
-  if (diff < 60) return Math.floor(diff) + '초 전';
-  if (diff < 3600) return Math.floor(diff / 60) + '분 전';
-  if (diff < 86400) return Math.floor(diff / 3600) + '시간 전';
-  return d.toLocaleDateString('ko-KR') + ' ' + d.toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleString("ko-KR", { hour12: false });
 }
-
-function scoreColor(s) {
-  if (s >= 90) return '#ff00aa';
-  if (s >= 75) return '#ff8800';
-  if (s >= 60) return '#ffcc00';
-  if (s >= 40) return '#66cc66';
-  return '#666';
+function fmtDate(s) {
+  if (!s) return "-";
+  return s.substring(0, 10);
 }
-
-function escapeHtml(s) {
-  if (s === null || s === undefined) return '';
-  return String(s).replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
+function scoreClass(s) {
+  if (s >= 70) return "s-high";
+  if (s >= 50) return "s-mid";
+  return "s-low";
+}
+function pctClass(v) {
+  if (v > 0) return "pos";
+  if (v < 0) return "neg";
+  return "";
 }
 
 // ============================================================
-// 초기 스냅샷 로딩
+// 탭
+// ============================================================
+function bindTabs() {
+  document.querySelectorAll(".tab").forEach(t => {
+    t.addEventListener("click", () => showTab(t.dataset.tab));
+  });
+}
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach(t => {
+    t.classList.toggle("active", t.dataset.tab === name);
+  });
+  document.querySelectorAll(".tab-content").forEach(c => {
+    c.style.display = c.id === "tab-" + name ? "" : "none";
+  });
+  // 탭별 자동 로딩
+  if (name === "themes") loadThemes();
+  else if (name === "accumulation") loadAccumulation();
+  else if (name === "anomalies") loadAnomalies();
+  else if (name === "events") loadEvents();
+  else if (name === "alerts") loadAlerts();
+  else if (name === "status") loadStatus();
+}
+
+// ============================================================
+// 시장 상태
+// ============================================================
+async function loadMarket() {
+  try {
+    const r = await fetch("/api/market");
+    const j = await r.json();
+    const el = document.getElementById("marketStatus");
+    if (!el) return;
+    const session = j.session || "closed";
+    const label = j.label || "마감";
+    el.textContent = label;
+    if (session === "regular") el.style.color = "var(--green)";
+    else if (session === "pre") el.style.color = "var(--yellow)";
+    else if (session === "after") el.style.color = "var(--orange)";
+    else el.style.color = "var(--red)";
+  } catch (e) {
+    console.warn("market load fail", e);
+  }
+}
+
+// ============================================================
+// 로딩 상태 체크
+// ============================================================
+async function chkLoad() {
+  try {
+    const r = await fetch("/health");
+    const j = await r.json();
+    const el = document.getElementById("loadStatus");
+    if (!el) return;
+    if (j.status === "ok" && j.loaded > 0) {
+      el.textContent = `📦 ${fmtInt(j.loaded)}개 로드`;
+      el.style.color = "var(--green)";
+    } else {
+      el.textContent = "⏳ 로딩 중...";
+      el.style.color = "var(--yellow)";
+    }
+  } catch (e) {}
+}
+
+// ============================================================
+// 초기 스냅샷
 // ============================================================
 async function preloadSnapshot() {
   try {
-    const r = await fetch('/api/snapshot?limit=2000').then(r => r.json());
-    STATE.all = r.items || [];
-    STATE.byMap = {};
-    for (const it of STATE.all) STATE.byMap[it.symbol] = it;
-    STATE.ready = r.ready;
-    document.getElementById('loadStatus').textContent =
-      r.ready
-        ? `✅ ${r.loaded}/${r.total}개 로딩 완료`
-        : `⏳ ${r.loaded}/${r.total}개 로딩중...`;
-    renderMain();
+    const r = await fetch("/api/snapshot?limit=2000");
+    const j = await r.json();
+    allRows = j.items || [];
+    applyFilter();
   } catch (e) {
-    console.error('snapshot 실패', e);
-    document.getElementById('loadStatus').textContent = '❌ 로딩 실패';
+    console.error("snapshot load fail", e);
+    document.getElementById("mainBody").innerHTML =
+      '<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--red)">데이터 로드 실패. 잠시 후 새로고침하세요.</td></tr>';
   }
 }
 
-// 로딩 상태 폴링 (준비 안됐을 때만)
-async function chkLoad() {
-  if (STATE.ready) return;
-  try {
-    const r = await fetch('/api/market').then(r => r.json());
-    STATE.ready = r.ready;
-    document.getElementById('loadStatus').textContent = r.ready
-      ? `✅ ${r.loaded}개 로딩 완료`
-      : `⏳ ${r.loaded}개 로딩중...`;
-    if (r.ready) preloadSnapshot();
-  } catch (e) {}
-}
-
-// 시장 상태 표시
-async function loadMarket() {
-  try {
-    const r = await fetch('/api/market').then(r => r.json());
-    const el = document.getElementById('marketStatus');
-    el.textContent = r.is_open ? '🟢 시장 OPEN' : '🔴 시장 CLOSED';
-    el.style.color = r.is_open ? 'var(--up)' : 'var(--down)';
-  } catch (e) {}
-}
-
 // ============================================================
-// WebSocket 실시간 연결
+// 필터 + 정렬
 // ============================================================
-function conn() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = `${proto}://${location.host}/ws/scores`;
-  try {
-    STATE.ws = new WebSocket(url);
-  } catch (e) {
-    console.error('ws 생성 실패', e);
-    setTimeout(conn, 3000);
-    return;
-  }
+function applyFilter() {
+  const sym = (document.getElementById("filterSym")?.value || "").toUpperCase().trim();
+  const grade = document.getElementById("filterGrade")?.value || "";
+  const minScore = parseFloat(document.getElementById("filterMinScore")?.value) || 0;
 
-  STATE.ws.onopen = () => {
-    STATE.wsRetry = 0;
-    document.getElementById('wsDot').classList.add('on');
-    document.getElementById('wsText').textContent = '● 실시간';
-  };
-
-  STATE.ws.onmessage = ev => {
-    try {
-      const msg = JSON.parse(ev.data);
-      if (msg.type === 'snapshot' || msg.type === 'update') {
-        live(msg.items || []);
-      }
-      // ping/pong 은 무시
-    } catch (e) {}
-  };
-
-  STATE.ws.onclose = () => {
-    document.getElementById('wsDot').classList.remove('on');
-    document.getElementById('wsText').textContent = '○ 재연결중';
-    STATE.wsRetry++;
-    const delay = Math.min(15000, 2000 * STATE.wsRetry);
-    setTimeout(conn, delay);
-  };
-
-  STATE.ws.onerror = () => {
-    try { STATE.ws.close(); } catch (e) {}
-  };
-}
-
-function live(items) {
-  if (!items || !items.length) return;
-  let changed = false;
-  for (const it of items) {
-    const prev = STATE.byMap[it.symbol];
-    if (prev) {
-      // 점수 변화 추적 (시각화용)
-      const oldScore = prev.sqs_score || 0;
-      const newScore = it.sqs_score || 0;
-      if (Math.abs(newScore - oldScore) >= 0.5) {
-        it._flash = newScore > oldScore ? 'up' : 'down';
-      }
-      Object.assign(prev, it);
-    } else {
-      STATE.byMap[it.symbol] = it;
-      STATE.all.push(it);
-    }
-    changed = true;
-  }
-  if (changed) renderMain();
-}
-
-// ============================================================
-// 메인 테이블 렌더링
-// ============================================================
-function renderMain() {
-  const search = (document.getElementById('searchSym').value || '').trim().toUpperCase();
-  const grade = document.getElementById('filterGrade').value;
-  const minScore = parseFloat(document.getElementById('filterMinScore').value) || 0;
-  const pageSize = parseInt(document.getElementById('pageSize').value) || 100;
-
-  // 필터링
-  let filtered = STATE.all.filter(it => {
-    if (search && !it.symbol.includes(search)) return false;
-    if (grade && it.grade !== grade) return false;
-    if ((it.sqs_score || 0) < minScore) return false;
-    if ((it.price || 0) <= 0) return false;
+  filteredRows = allRows.filter(r => {
+    if (sym && !(r.symbol || "").toUpperCase().includes(sym)) return false;
+    if (grade && r.grade !== grade) return false;
+    if (minScore > 0 && (r.sqs_score || 0) < minScore) return false;
     return true;
   });
 
-  // 정렬
-  const k = STATE.sortKey;
-  const dir = STATE.sortDesc ? -1 : 1;
-  filtered.sort((a, b) => {
-    const va = a[k] ?? 0;
-    const vb = b[k] ?? 0;
-    if (typeof va === 'string') return dir * va.localeCompare(vb);
-    return dir * ((va - vb) || 0);
-  });
-
-  // 결과 카운트
-  document.getElementById('resultCount').textContent = `${filtered.length}개 결과`;
-
-  // 페이지네이션
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  if (STATE.page > totalPages) STATE.page = totalPages;
-  const start = (STATE.page - 1) * pageSize;
-  const pageItems = filtered.slice(start, start + pageSize);
-
-  // 행 렌더링
-  const tbody = document.getElementById('mainTbody');
-  tbody.innerHTML = pageItems.map(it => {
-    const score = it.sqs_score || 0;
-    const flashClass = it._flash ? `flash-${it._flash}` : '';
-    if (it._flash) delete it._flash;
-    return `
-      <tr class="${flashClass}" onclick="showDetail('${it.symbol}')">
-        <td><span class="sym">${escapeHtml(it.symbol)}</span></td>
-        <td>${fmtPrice(it.price)}</td>
-        <td class="${(it.change_pct||0)>=0?'up':'down'}">${fmtPct(it.change_pct)}</td>
-        <td>${fmtNum(it.volume, 0)}</td>
-        <td>${(it.si_pct||0).toFixed(1)}%</td>
-        <td>${(it.ctb||0).toFixed(1)}%</td>
-        <td>${fmtNum(it.float_shares, 1)}</td>
-        <td>${(it.rsi14||50).toFixed(0)}</td>
-        <td>${(it.acc_score||0).toFixed(0)}</td>
-        <td>
-          <div class="score-cell">
-            <div class="score-bar"><div style="width:${score}%;background:${scoreColor(score)}"></div></div>
-            <span class="score-val" style="color:${scoreColor(score)}">${score.toFixed(1)}</span>
-          </div>
-        </td>
-        <td>${it.grade ? `<span class="grade ${it.grade}">${it.grade}</span>` : '-'}</td>
-      </tr>`;
-  }).join('') || '<tr><td colspan="11" class="empty">결과 없음</td></tr>';
-
-  // 페이저
-  renderPager(totalPages);
-}
-
-function renderPager(totalPages) {
-  const pager = document.getElementById('mainPager');
-  if (totalPages <= 1) { pager.innerHTML = ''; return; }
-
-  const cur = STATE.page;
-  let html = '';
-  html += `<button ${cur===1?'disabled':''} onclick="goPage(${cur-1})">‹</button>`;
-
-  const start = Math.max(1, cur - 3);
-  const end = Math.min(totalPages, cur + 3);
-  if (start > 1) {
-    html += `<button onclick="goPage(1)">1</button>`;
-    if (start > 2) html += `<span class="muted">…</span>`;
-  }
-  for (let i = start; i <= end; i++) {
-    html += `<button class="${i===cur?'active':''}" onclick="goPage(${i})">${i}</button>`;
-  }
-  if (end < totalPages) {
-    if (end < totalPages - 1) html += `<span class="muted">…</span>`;
-    html += `<button onclick="goPage(${totalPages})">${totalPages}</button>`;
-  }
-  html += `<button ${cur===totalPages?'disabled':''} onclick="goPage(${cur+1})">›</button>`;
-  pager.innerHTML = html;
-}
-
-function goPage(p) {
-  STATE.page = p;
+  sortRows();
+  currentPage = 1;
   renderMain();
-  window.scrollTo({top: 0, behavior: 'smooth'});
+
+  const info = document.getElementById("filterInfo");
+  if (info) info.textContent = `${fmtInt(filteredRows.length)} / ${fmtInt(allRows.length)}`;
+  document.getElementById("mainCount").textContent = `${fmtInt(filteredRows.length)}개`;
 }
 
-// 컬럼 정렬 이벤트
 function bindSort() {
-  document.querySelectorAll('#mainTable th[data-sort]').forEach(th => {
-    th.addEventListener('click', () => {
+  document.querySelectorAll("#mainTable th[data-sort]").forEach(th => {
+    th.addEventListener("click", () => {
       const k = th.dataset.sort;
-      if (STATE.sortKey === k) {
-        STATE.sortDesc = !STATE.sortDesc;
-      } else {
-        STATE.sortKey = k;
-        STATE.sortDesc = true;
-      }
-      // 헤더 표시 갱신
-      document.querySelectorAll('#mainTable th').forEach(t => {
-        t.classList.remove('sort-asc', 'sort-desc');
-      });
-      th.classList.add(STATE.sortDesc ? 'sort-desc' : 'sort-asc');
-      STATE.page = 1;
+      if (sortKey === k) sortDir = sortDir === "asc" ? "desc" : "asc";
+      else { sortKey = k; sortDir = "desc"; }
+      sortRows();
       renderMain();
     });
   });
 }
 
-// ============================================================
-// 탭 전환
-// ============================================================
-function showTab(name) {
-  document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-
-  const content = document.getElementById('tab-' + name);
-  const btn = document.querySelector(`.tab[data-tab="${name}"]`);
-  if (content) content.classList.add('active');
-  if (btn) btn.classList.add('active');
-
-  // 각 탭 진입 시 로딩
-  if (name === 'themes') loadThemes();
-  else if (name === 'accumulation') loadAccumulation();
-  else if (name === 'anomalies') loadAnomalies();
-  else if (name === 'events') loadEvents();
-  else if (name === 'alerts') loadAlerts();
-  else if (name === 'status') loadStatus();
-}
-
-function bindTabs() {
-  document.querySelectorAll('.tab').forEach(btn => {
-    btn.addEventListener('click', () => showTab(btn.dataset.tab));
+function sortRows() {
+  const k = sortKey, dir = sortDir === "asc" ? 1 : -1;
+  filteredRows.sort((a, b) => {
+    let va = a[k], vb = b[k];
+    if (va === null || va === undefined) va = (typeof vb === "number") ? -Infinity : "";
+    if (vb === null || vb === undefined) vb = (typeof va === "number") ? -Infinity : "";
+    if (typeof va === "string") return va.localeCompare(vb) * dir;
+    return (va - vb) * dir;
+  });
+  // 헤더 화살표 갱신
+  document.querySelectorAll("#mainTable th").forEach(th => {
+    const a = th.dataset.sort === sortKey ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+    th.innerHTML = th.textContent.replace(/[▲▼]/g, "").trim() + (a ? `<span class="arrow">${a}</span>` : "");
   });
 }
+
+// ============================================================
+// 메인 렌더링 (PC 테이블 + 모바일 카드)
+// ============================================================
+function renderMain() {
+  const pageSize = isMobile() ? PAGE_SIZE_MOBILE : PAGE_SIZE_PC;
+  const start = (currentPage - 1) * pageSize;
+  const end = start + pageSize;
+  const pageRows = filteredRows.slice(start, end);
+
+  renderTable(pageRows);
+  renderCards(pageRows);
+  renderPagination(pageSize);
+}
+
+function renderTable(rows) {
+  const tb = document.getElementById("mainBody");
+  if (!tb) return;
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text-dim)">결과가 없습니다.</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(r => `
+    <tr onclick="showDetail('${r.symbol}')">
+      <td class="sym">${r.symbol || "-"}</td>
+      <td>${(r.name || "-").substring(0, 24)}</td>
+      <td>${r.theme || "-"}</td>
+      <td class="num">$${fmtNum(r.price)}</td>
+      <td class="num ${pctClass(r.change_pct)}">${fmtPct(r.change_pct)}</td>
+      <td class="num">${fmtVol(r.volume)}</td>
+      <td class="num ${scoreClass(r.sqs_score || 0)}">${fmtNum(r.sqs_score, 1)}</td>
+      <td><span class="grade g-${r.grade || 'NORMAL'}">${r.grade || "NORMAL"}</span></td>
+      <td class="num">${fmtPct((r.si_pct || 0) * 100, 1)}</td>
+      <td class="num">${fmtPct(r.ctb, 1)}</td>
+      <td class="num">${fmtNum(r.rsi14, 1)}</td>
+    </tr>
+  `).join("");
+}
+
+function renderCards(rows) {
+  const list = document.getElementById("mainCardList");
+  if (!list) return;
+  if (!rows.length) {
+    list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim)">결과가 없습니다.</div>';
+    return;
+  }
+  list.innerHTML = rows.map(r => `
+    <div class="mobile-card" onclick="showDetail('${r.symbol}')">
+      <div class="mobile-card-top">
+        <div>
+          <div class="mobile-card-sym">${r.symbol || "-"}</div>
+          <div class="mobile-card-name">${(r.name || "").substring(0, 28)}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="mobile-card-score ${scoreClass(r.sqs_score || 0)}">${fmtNum(r.sqs_score, 0)}</div>
+          <span class="grade g-${r.grade || 'NORMAL'}">${r.grade || "NORMAL"}</span>
+        </div>
+      </div>
+      <div class="mobile-card-mid">
+        <div class="mobile-card-price">$${fmtNum(r.price)}</div>
+        <div class="mobile-card-change ${pctClass(r.change_pct)}">${fmtPct(r.change_pct)}</div>
+      </div>
+      <div class="mobile-card-bottom">
+        <div class="mc-stat">
+          <span class="mc-stat-label">거래량</span>
+          <span class="mc-stat-value">${fmtVol(r.volume)}</span>
+        </div>
+        <div class="mc-stat">
+          <span class="mc-stat-label">SI%</span>
+          <span class="mc-stat-value">${fmtPct((r.si_pct || 0) * 100, 1)}</span>
+        </div>
+        <div class="mc-stat">
+          <span class="mc-stat-label">CTB%</span>
+          <span class="mc-stat-value">${fmtPct(r.ctb, 1)}</span>
+        </div>
+        <div class="mc-stat">
+          <span class="mc-stat-label">RSI</span>
+          <span class="mc-stat-value">${fmtNum(r.rsi14, 0)}</span>
+        </div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function renderPagination(pageSize) {
+  const total = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const el = document.getElementById("pagination");
+  if (!el) return;
+
+  if (totalPages <= 1) { el.innerHTML = ""; return; }
+
+  let html = "";
+  html += `<button onclick="goPage(1)" ${currentPage===1?"disabled":""}>«</button>`;
+  html += `<button onclick="goPage(${currentPage-1})" ${currentPage===1?"disabled":""}>‹</button>`;
+
+  // 페이지 번호 (현재 ±2)
+  const start = Math.max(1, currentPage - 2);
+  const end = Math.min(totalPages, currentPage + 2);
+  for (let i = start; i <= end; i++) {
+    html += `<button class="${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</button>`;
+  }
+  html += `<button onclick="goPage(${currentPage+1})" ${currentPage===totalPages?"disabled":""}>›</button>`;
+  html += `<button onclick="goPage(${totalPages})" ${currentPage===totalPages?"disabled":""}>»</button>`;
+
+  el.innerHTML = html;
+}
+
+function goPage(p) {
+  const pageSize = isMobile() ? PAGE_SIZE_MOBILE : PAGE_SIZE_PC;
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  currentPage = Math.max(1, Math.min(p, totalPages));
+  renderMain();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// ============================================================
+// 입력 이벤트 (디바운스 검색)
+// ============================================================
+let filterTimer = null;
+function bindFilterInputs() {
+  ["filterSym", "filterMinScore"].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("input", () => {
+      clearTimeout(filterTimer);
+      filterTimer = setTimeout(applyFilter, 300);
+    });
+  });
+  const gr = document.getElementById("filterGrade");
+  if (gr) gr.addEventListener("change", applyFilter);
+}
+
+// ============================================================
+// WebSocket 실시간
+// ============================================================
+function conn() {
+  if (ws && ws.readyState === WebSocket.OPEN) return;
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const url = `${proto}//${location.host}/ws/scores`;
+  try {
+    ws = new WebSocket(url);
+  } catch (e) {
+    setWsStatus(false);
+    scheduleReconnect();
+    return;
+  }
+
+  ws.onopen = () => {
+    setWsStatus(true);
+    // 30초마다 ping
+    if (ws._pingTimer) clearInterval(ws._pingTimer);
+    ws._pingTimer = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send("ping");
+    }, 30000);
+  };
+
+  ws.onmessage = (evt) => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+    if (msg.type === "snapshot" && Array.isArray(msg.items)) {
+      mergeUpdates(msg.items);
+    } else if (msg.type === "update" && Array.isArray(msg.items)) {
+      mergeUpdates(msg.items);
+    } else if (msg.type === "heartbeat") {
+      // 무시
+    }
+  };
+
+  ws.onclose = () => {
+    setWsStatus(false);
+    if (ws && ws._pingTimer) clearInterval(ws._pingTimer);
+    scheduleReconnect();
+  };
+  ws.onerror = () => {
+    setWsStatus(false);
+  };
+}
+
+function scheduleReconnect() {
+  if (wsReconnectTimer) return;
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null;
+    conn();
+  }, 5000);
+}
+
+function setWsStatus(on) {
+  const dot = document.getElementById("wsDot");
+  const lbl = document.getElementById("wsLabel");
+  if (!dot || !lbl) return;
+  dot.classList.toggle("on", on);
+  dot.classList.toggle("off", !on);
+  lbl.textContent = on ? "실시간 연결" : "재연결 중...";
+}
+
+function mergeUpdates(items) {
+  const byId = {};
+  items.forEach(it => { byId[it.symbol] = it; });
+  for (let i = 0; i < allRows.length; i++) {
+    const u = byId[allRows[i].symbol];
+    if (u) Object.assign(allRows[i], u);
+  }
+  // 현재 화면에 보이는 페이지만 다시 렌더
+  // 정렬 키가 동적 값이면 재정렬 후 렌더 (스크롤 유지 위해 페이지는 유지)
+  sortRows();
+  renderMain();
+}
+
+// 윈도우 리사이즈: PC↔모바일 전환 시 페이지 재계산
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    currentPage = 1;
+    renderMain();
+  }, 200);
+});
 </script>
 """
+
 HTML_PAGE += r"""
 <script>
 // ============================================================
 // 테마 탭
 // ============================================================
 async function loadThemes() {
+  const grid = document.getElementById("themesGrid");
+  grid.innerHTML = '<div class="loading">로딩 중...</div>';
   try {
-    const r = await fetch('/api/themes').then(r => r.json());
-    const el = document.getElementById('themeList');
-    if (!r.themes || r.themes.length === 0) {
-      el.innerHTML = '<div class="empty">테마 데이터 없음</div>';
+    const r = await fetch("/api/themes");
+    const j = await r.json();
+    const themes = j.themes || [];
+    document.getElementById("themesCount").textContent = `${themes.length}개 테마`;
+
+    if (!themes.length) {
+      grid.innerHTML = '<div class="loading">테마 데이터가 없습니다.</div>';
       return;
     }
-    el.innerHTML = r.themes.map(t => {
-      const topRows = (t.top || []).map(it => {
-        const s = it.sqs_score || 0;
-        return `
-          <tr onclick="showDetail('${it.symbol}')">
-            <td><span class="sym">${escapeHtml(it.symbol)}</span></td>
-            <td>${fmtPrice(it.price)}</td>
-            <td class="${(it.change_pct||0)>=0?'up':'down'}">${fmtPct(it.change_pct)}</td>
-            <td>
-              <div class="score-cell">
-                <div class="score-bar"><div style="width:${s}%;background:${scoreColor(s)}"></div></div>
-                <span class="score-val" style="color:${scoreColor(s)}">${s.toFixed(1)}</span>
-              </div>
-            </td>
-            <td>${it.grade ? `<span class="grade ${it.grade}">${it.grade}</span>` : '-'}</td>
-          </tr>`;
-      }).join('');
-      return `
-        <div class="theme-group">
-          <div class="theme-head">
-            <span class="theme-name">${escapeHtml(t.theme)}</span>
-            <span class="theme-stats">${t.count}개 · 평균 ${t.avg_score.toFixed(1)}점</span>
-          </div>
-          <table>
-            <thead><tr><th>심볼</th><th>가격</th><th>변동%</th><th>점수</th><th>등급</th></tr></thead>
-            <tbody>${topRows}</tbody>
-          </table>
-        </div>`;
-    }).join('');
+
+    grid.innerHTML = themes.map(t => `
+      <div class="theme-card">
+        <h3>
+          <span>${t.theme}</span>
+          <span class="cnt">${t.count}개 · 평균 ${fmtNum(t.avg_score, 1)}</span>
+        </h3>
+        <div class="theme-list">
+          ${(t.top || []).map(s => `
+            <div class="row" onclick="showDetail('${s.symbol}')">
+              <span><strong>${s.symbol}</strong> ${(s.name || "").substring(0, 18)}</span>
+              <span class="${scoreClass(s.sqs_score || 0)}">${fmtNum(s.sqs_score, 1)}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `).join("");
   } catch (e) {
-    document.getElementById('themeList').innerHTML = '<div class="empty">로딩 실패</div>';
+    grid.innerHTML = '<div class="loading" style="color:var(--red)">로드 실패</div>';
   }
 }
 
 // ============================================================
-// 매집신호 탭
+// 누적신호 탭
 // ============================================================
 async function loadAccumulation() {
+  const grid = document.getElementById("accGrid");
+  grid.innerHTML = '<div class="loading">로딩 중...</div>';
   try {
-    const min = document.getElementById('accMinScore').value;
-    const r = await fetch(`/api/accumulation?min_score=${min}&limit=200`).then(r => r.json());
-    const items = r.items || [];
+    const r = await fetch("/api/accumulation?limit=200&min_score=40");
+    const j = await r.json();
+    const items = j.items || [];
 
-    // 티어별 통계
-    const tiers = {STRONG: 0, ACTIVE: 0, EMERGING: 0, WEAK: 0};
-    items.forEach(it => { tiers[it.tier] = (tiers[it.tier] || 0) + 1; });
-    document.getElementById('accStats').textContent =
-      `총 ${items.length}개 · STRONG ${tiers.STRONG} · ACTIVE ${tiers.ACTIVE} · EMERGING ${tiers.EMERGING}`;
+    // tier 통계
+    const tiers = { STRONG: 0, ACTIVE: 0, WEAK: 0, EMERGING: 0 };
+    items.forEach(it => { if (tiers[it.tier] !== undefined) tiers[it.tier]++; });
 
-    const tbody = document.getElementById('accTbody');
-    tbody.innerHTML = items.map(it => {
-      const signals = (it.acc_signals || []).slice(0, 3).map(s =>
-        `<span class="acc-tag">${escapeHtml(s)}</span>`
-      ).join(' ');
-      const obvPct = ((it.obv_slope || 0) * 100).toFixed(1);
-      return `
-        <tr onclick="showDetail('${it.symbol}')">
-          <td><span class="sym">${escapeHtml(it.symbol)}</span></td>
-          <td>${fmtPrice(it.price)}</td>
-          <td><span class="tier ${it.tier}">${it.tier}</span></td>
-          <td><b style="color:${scoreColor(it.acc_score)}">${(it.acc_score||0).toFixed(0)}</b></td>
-          <td class="${(it.obv_slope||0)>=0?'up':'down'}">${obvPct}%</td>
-          <td class="${(it.cmf||0)>=0?'up':'down'}">${(it.cmf||0).toFixed(2)}</td>
-          <td>${it.vol_spike_days || 0}일</td>
-          <td>${it.acc_candles || 0} / ${it.dist_candles || 0}</td>
-          <td>${signals || '-'}</td>
-        </tr>`;
-    }).join('') || '<tr><td colspan="9" class="empty">매집 신호 없음</td></tr>';
+    document.getElementById("tierStats").innerHTML = `
+      <div class="tier-stat"><div>STRONG</div><div class="v" style="color:var(--red)">${tiers.STRONG}</div></div>
+      <div class="tier-stat"><div>ACTIVE</div><div class="v" style="color:var(--orange)">${tiers.ACTIVE}</div></div>
+      <div class="tier-stat"><div>EMERGING</div><div class="v" style="color:var(--yellow)">${tiers.EMERGING}</div></div>
+      <div class="tier-stat"><div>WEAK</div><div class="v" style="color:var(--text-dim)">${tiers.WEAK}</div></div>
+    `;
+    document.getElementById("accCount").textContent = `${items.length}개`;
+
+    if (!items.length) {
+      grid.innerHTML = '<div class="loading">누적 신호 종목 없음</div>';
+      return;
+    }
+
+    grid.innerHTML = items.map(it => `
+      <div class="acc-card" onclick="showDetail('${it.symbol}')" style="cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <strong style="font-size:15px">${it.symbol}</strong>
+            <span style="color:var(--text-dim);font-size:11px;margin-left:6px">${(it.name||"").substring(0,18)}</span>
+          </div>
+          <span class="grade g-${it.grade || 'NORMAL'}">${it.tier}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>누적점수: <strong class="${scoreClass(it.acc_score)}">${fmtNum(it.acc_score, 1)}</strong></span>
+          <span>SQS: <strong class="${scoreClass(it.sqs_score)}">${fmtNum(it.sqs_score, 1)}</strong></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim)">
+          <span>$${fmtNum(it.price)}</span>
+          <span class="${pctClass(it.change_pct)}">${fmtPct(it.change_pct)}</span>
+          <span>${fmtVol(it.volume)}</span>
+        </div>
+        ${it.signals && it.signals.length ? `
+          <div class="acc-tags">
+            ${it.signals.slice(0, 4).map(s => `<span class="acc-tag">${s}</span>`).join("")}
+          </div>
+        ` : ""}
+      </div>
+    `).join("");
   } catch (e) {
-    console.error(e);
+    grid.innerHTML = '<div class="loading" style="color:var(--red)">로드 실패</div>';
   }
 }
 
@@ -1034,58 +1254,36 @@ async function loadAccumulation() {
 // 이상거래 탭
 // ============================================================
 async function loadAnomalies() {
+  const grid = document.getElementById("anomGrid");
+  grid.innerHTML = '<div class="loading">로딩 중...</div>';
   try {
-    const sev = document.getElementById('anomSeverity').value;
-    const url = '/api/anomalies?limit=100' + (sev ? '&severity=' + sev : '');
-    const r = await fetch(url).then(r => r.json());
-    const el = document.getElementById('anomList');
-    document.getElementById('anomStats').textContent = `총 ${r.count || 0}건`;
+    const sev = document.getElementById("anomSeverity").value;
+    const q = sev ? `?severity=${sev}&limit=100` : "?limit=100";
+    const r = await fetch("/api/anomalies" + q);
+    const j = await r.json();
+    const items = j.items || [];
+    document.getElementById("anomCount").textContent = `${items.length}개`;
 
-    if (!r.items || r.items.length === 0) {
-      el.innerHTML = '<div class="empty">탐지된 이상거래 없음</div>';
+    if (!items.length) {
+      grid.innerHTML = '<div class="loading">감지된 이상거래 없음</div>';
       return;
     }
 
-    const typeKr = {
-      volume_spike: '거래량 급증',
-      price_spike: '가격 급변',
-      unusual_options: '이상 옵션 활동',
-      gamma_squeeze_imminent: '감마 스퀴즈 임박',
-      dark_pool_heavy: '다크풀 집중',
-    };
-
-    el.innerHTML = r.items.map(a => {
-      const sevColor = {critical:'#ff3333', high:'#ff8800', info:'#3399ff'}[a.severity] || '#999';
-      const tk = typeKr[a.anomaly_type] || a.anomaly_type;
-      let detail = '';
-      if (a.data) {
-        if (a.data.z !== undefined) detail += `Z=${a.data.z} `;
-        if (a.data.direction) detail += `(${a.data.direction === 'up' ? '⬆' : '⬇'}) `;
-        if (a.data.gamma !== undefined) detail += `γ=${a.data.gamma} `;
-        if (a.data.cp_ratio !== undefined) detail += `C/P=${a.data.cp_ratio} `;
-        if (a.data.ratio !== undefined) detail += `${(a.data.ratio*100).toFixed(0)}% `;
-        if (a.data.score !== undefined) detail += `score=${a.data.score} `;
-      }
-      return `
-        <div class="anom-card" onclick="showDetail('${a.symbol}')" style="border-left:4px solid ${sevColor}">
-          <div class="anom-head">
-            <span class="sym">${escapeHtml(a.symbol)}</span>
-            <span class="badge" style="background:${sevColor}">${(a.severity||'').toUpperCase()}</span>
-            <span class="type">${tk}</span>
-            <span class="muted" style="margin-left:auto">${fmtTime(a.detected_at)}</span>
-          </div>
-          <div class="anom-body">
-            <span>${fmtPrice(a.price)}</span>
-            <span class="${(a.change_pct||0)>=0?'up':'down'}">${fmtPct(a.change_pct)}</span>
-            <span>거래량 ${fmtNum(a.volume, 0)}</span>
-            <span>SQS ${(a.sqs_score||0).toFixed(1)}</span>
-            ${a.grade ? `<span class="grade ${a.grade}">${a.grade}</span>` : ''}
-            <span class="muted">${detail}</span>
-          </div>
-        </div>`;
-    }).join('');
+    grid.innerHTML = items.map(it => `
+      <div class="anom-card" onclick="showDetail('${it.symbol}')" style="cursor:pointer">
+        <div class="anom-head">
+          <span>
+            <span class="badge lv-${it.level || 'info'}">${(it.level||'info').toUpperCase()}</span>
+            <strong>${it.symbol}</strong>
+          </span>
+          <span class="${scoreClass(it.sqs_score || 0)}">${fmtNum(it.sqs_score, 1)}</span>
+        </div>
+        <div class="anom-msg">${it.msg || it.type || "-"}</div>
+        <div class="anom-time">${fmtTime(it.t)}</div>
+      </div>
+    `).join("");
   } catch (e) {
-    console.error(e);
+    grid.innerHTML = '<div class="loading" style="color:var(--red)">로드 실패</div>';
   }
 }
 
@@ -1093,34 +1291,67 @@ async function loadAnomalies() {
 // 이벤트 탭
 // ============================================================
 async function loadEvents() {
+  const container = document.getElementById("eventsContainer");
+  container.innerHTML = '<div class="loading">로딩 중...</div>';
   try {
-    const days = document.getElementById('eventDays').value;
-    const r = await fetch(`/api/events?days=${days}`).then(r => r.json());
+    const days = document.getElementById("eventDays").value || 7;
+    const r = await fetch(`/api/events?days=${days}`);
+    const j = await r.json();
+    const earnings = j.earnings || [];
+    const dividends = j.dividends || [];
+    const splits = j.splits || [];
 
-    const render = (items, type) => {
-      if (!items || items.length === 0) return '<div class="empty">없음</div>';
-      return items.map(e => {
-        const dateStr = (e.date || e.ex_date || '').slice(0, 10);
-        let extra = '';
-        if (type === 'dividend') extra = `$${(e.amount||0).toFixed(3)}`;
-        else if (type === 'split') extra = e.ratio || '';
-        return `
-          <div class="event-card" onclick="showDetail('${e.symbol}')">
-            <span class="sym">${escapeHtml(e.symbol)}</span>
-            <span class="muted">${escapeHtml(e.name || '')}</span>
-            <span class="days">D-${e.days}</span>
-            <span class="muted">${dateStr}</span>
-            <span class="extra">${extra}</span>
-            <span>SQS ${(e.sqs_score||0).toFixed(0)}</span>
-          </div>`;
-      }).join('');
-    };
+    const total = earnings.length + dividends.length + splits.length;
+    document.getElementById("eventsCount").textContent = `${total}건`;
 
-    document.getElementById('eventEarnings').innerHTML = render(r.earnings, 'earnings');
-    document.getElementById('eventDividends').innerHTML = render(r.dividends, 'dividend');
-    document.getElementById('eventSplits').innerHTML = render(r.splits, 'split');
+    if (!total) {
+      container.innerHTML = `<div class="loading">${days}일 이내 예정 이벤트 없음</div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      ${earnings.length ? `
+        <h3 style="font-size:14px;margin:12px 0 8px">📊 실적 발표 (${earnings.length})</h3>
+        <div class="card-grid">
+          ${earnings.map(e => `
+            <div class="event-card" onclick="showDetail('${e.symbol}')" style="cursor:pointer">
+              <div class="event-head">
+                <strong>${e.symbol}</strong>
+                <span style="color:var(--orange)">D-${e.days_to}</span>
+              </div>
+              <div class="event-msg">${fmtDate(e.date)} · ${e.timing || ""}</div>
+            </div>
+          `).join("")}
+        </div>` : ""}
+      ${dividends.length ? `
+        <h3 style="font-size:14px;margin:16px 0 8px">💰 배당 (${dividends.length})</h3>
+        <div class="card-grid">
+          ${dividends.map(e => `
+            <div class="event-card" onclick="showDetail('${e.symbol}')" style="cursor:pointer">
+              <div class="event-head">
+                <strong>${e.symbol}</strong>
+                <span style="color:var(--green)">D-${e.days_to}</span>
+              </div>
+              <div class="event-msg">배당락: ${fmtDate(e.ex_date)} · $${fmtNum(e.cash_amount, 4)}</div>
+            </div>
+          `).join("")}
+        </div>` : ""}
+      ${splits.length ? `
+        <h3 style="font-size:14px;margin:16px 0 8px">🔀 액면분할 (${splits.length})</h3>
+        <div class="card-grid">
+          ${splits.map(e => `
+            <div class="event-card" onclick="showDetail('${e.symbol}')" style="cursor:pointer">
+              <div class="event-head">
+                <strong>${e.symbol}</strong>
+                <span style="color:var(--purple)">D-${e.days_to}</span>
+              </div>
+              <div class="event-msg">${fmtDate(e.execution_date)} · ${e.split_from}:${e.split_to}</div>
+            </div>
+          `).join("")}
+        </div>` : ""}
+    `;
   } catch (e) {
-    console.error(e);
+    container.innerHTML = '<div class="loading" style="color:var(--red)">로드 실패</div>';
   }
 }
 
@@ -1128,89 +1359,106 @@ async function loadEvents() {
 // 알림 탭
 // ============================================================
 async function loadAlerts() {
+  const grid = document.getElementById("alertsGrid");
+  grid.innerHTML = '<div class="loading">로딩 중...</div>';
   try {
-    const level = document.getElementById('alertLevel').value;
-    const url = '/api/alerts?limit=200' + (level ? '&level=' + level : '');
-    const r = await fetch(url).then(r => r.json());
-    const el = document.getElementById('alertList');
+    const lv = document.getElementById("alertLevel").value;
+    const q = lv ? `?level=${lv}&limit=200` : "?limit=200";
+    const r = await fetch("/api/alerts" + q);
+    const j = await r.json();
+    const items = j.items || [];
+    document.getElementById("alertsCount").textContent = `${items.length}개`;
 
-    if (!r.items || r.items.length === 0) {
-      el.innerHTML = '<div class="empty">알림 없음</div>';
+    if (!items.length) {
+      grid.innerHTML = '<div class="loading">알림 없음</div>';
       return;
     }
 
-    el.innerHTML = r.items.map(a => `
-      <div class="alert-card ${a.level || 'info'}" onclick="showDetail('${a.symbol}')">
-        <span class="sym">${escapeHtml(a.symbol)}</span>
-        <span class="muted">${escapeHtml(a.type || '')}</span>
-        <span>${escapeHtml(a.msg || '')}</span>
-        <span class="time">${fmtTime(a.t)}</span>
+    grid.innerHTML = items.map(it => `
+      <div class="alert-card" onclick="showDetail('${it.symbol}')" style="cursor:pointer">
+        <div class="alert-head">
+          <span>
+            <span class="badge lv-${it.level || 'info'}">${(it.level||'info').toUpperCase()}</span>
+            <strong>${it.symbol}</strong>
+          </span>
+          <span style="font-size:10px;color:var(--text-dim)">${it.type || ""}</span>
+        </div>
+        <div class="alert-msg">${it.msg || "-"}</div>
+        <div class="alert-time">${fmtTime(it.t)}</div>
       </div>
-    `).join('');
+    `).join("");
   } catch (e) {
-    console.error(e);
+    grid.innerHTML = '<div class="loading" style="color:var(--red)">로드 실패</div>';
   }
 }
 
 // ============================================================
 // 시스템 상태 탭
 // ============================================================
+let scoreDistChart = null;
 async function loadStatus() {
+  const grid = document.getElementById("statusGrid");
+  grid.innerHTML = '<div class="loading">로딩 중...</div>';
   try {
-    const r = await fetch('/api/status').then(r => r.json());
+    const r = await fetch("/api/status");
+    const j = await r.json();
 
-    // 시스템 메트릭
-    document.getElementById('sysStatus').innerHTML = `
-      <div><label>준비 상태</label><b style="color:${r.ready?'var(--up)':'var(--warn)'}">${r.ready ? '✅ Ready' : '⏳ Loading'}</b></div>
-      <div><label>전체 종목</label><b>${r.total_symbols.toLocaleString()}</b></div>
-      <div><label>WebSocket</label><b style="color:${r.ws_connected?'var(--up)':'var(--down)'}">${r.ws_connected ? '🟢 Connected' : '🔴 Off'}</b></div>
-      <div><label>재계산 대기</label><b>${r.dirty_pending}</b></div>
-      <div><label>활성 이상거래</label><b>${r.anomalies_active}</b></div>
-      <div><label>누적 알림</label><b>${r.alerts_total}</b></div>
+    grid.innerHTML = `
+      <div class="status-box"><div class="label">로드 종목</div><div class="value">${fmtInt(j.loaded || 0)}</div></div>
+      <div class="status-box"><div class="label">WS 연결</div><div class="value" style="color:${j.ws_connected?'var(--green)':'var(--red)'}">${j.ws_connected?"ON":"OFF"}</div></div>
+      <div class="status-box"><div class="label">WS 클라이언트</div><div class="value">${fmtInt(j.ws_clients || 0)}</div></div>
+      <div class="status-box"><div class="label">대기 업데이트</div><div class="value">${fmtInt(j.dirty || 0)}</div></div>
+      <div class="status-box"><div class="label">이상거래</div><div class="value">${fmtInt(j.anomalies || 0)}</div></div>
+      <div class="status-box"><div class="label">활성 알림</div><div class="value">${fmtInt(j.alerts || 0)}</div></div>
     `;
 
-    // 커버리지 테이블
-    const cov = r.coverage || {};
-    document.getElementById('covTbody').innerHTML = Object.entries(cov).map(([k, v]) => {
-      const match = v.match(/\((\d+)%\)/);
-      const pct = match ? parseInt(match[1]) : 0;
-      const color = pct >= 60 ? 'var(--up)' : pct >= 30 ? 'var(--warn)' : 'var(--down)';
-      return `<tr><td>${escapeHtml(k)}</td><td style="color:${color}">${escapeHtml(v)}</td></tr>`;
-    }).join('');
+    // 데이터 커버리지
+    const cov = j.coverage || {};
+    const total = j.loaded || 1;
+    const covTable = document.getElementById("coverageTable");
+    const rows = Object.keys(cov).map(k => {
+      const n = cov[k] || 0;
+      const pct = (n / total * 100).toFixed(1);
+      const cls = pct < 30 ? "low" : (pct < 60 ? "mid" : "");
+      return `
+        <tr>
+          <td style="padding:6px 8px;width:30%">${k}</td>
+          <td style="padding:6px 8px;width:15%">${fmtInt(n)}</td>
+          <td style="padding:6px 8px;width:10%">${pct}%</td>
+          <td style="padding:6px 8px"><div class="coverage-bar"><div class="coverage-bar-fill ${cls}" style="width:${pct}%"></div></div></td>
+        </tr>`;
+    }).join("");
+    covTable.innerHTML = `<thead><tr><th>필드</th><th>채워진 종목</th><th>%</th><th>비율</th></tr></thead><tbody>${rows}</tbody>`;
 
     // 점수 분포 차트
-    drawScoreDist(r.score_distribution || {});
+    drawScoreDist(j.score_distribution || {});
   } catch (e) {
-    console.error(e);
+    grid.innerHTML = '<div class="loading" style="color:var(--red)">로드 실패</div>';
   }
 }
 
 function drawScoreDist(dist) {
-  const ctx = document.getElementById('scoreDistChart');
+  const ctx = document.getElementById("scoreDistChart");
   if (!ctx) return;
-  if (STATE.charts.scoreDist) STATE.charts.scoreDist.destroy();
-
-  const labels = ['0-20', '20-40', '40-60', '60-80', '80+'];
-  const data = labels.map(l => dist[l] || 0);
-  const colors = ['#666', '#66cc66', '#ffcc00', '#ff8800', '#ff00aa'];
-
-  STATE.charts.scoreDist = new Chart(ctx, {
-    type: 'bar',
+  if (scoreDistChart) { scoreDistChart.destroy(); scoreDistChart = null; }
+  const labels = Object.keys(dist);
+  const data = Object.values(dist);
+  scoreDistChart = new Chart(ctx, {
+    type: "bar",
     data: {
       labels,
       datasets: [{
-        label: '종목 수',
+        label: "종목 수",
         data,
-        backgroundColor: colors,
+        backgroundColor: ["#8a93a8", "#feca57", "#ff9f43", "#ff5470", "#a55eea"]
       }]
     },
     options: {
       responsive: true,
-      maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#888' }, grid: { color: '#2a2a4a' } },
-        y: { ticks: { color: '#888' }, grid: { color: '#2a2a4a' } },
+        y: { ticks: { color: "#8a93a8" }, grid: { color: "rgba(138,147,168,0.15)" } },
+        x: { ticks: { color: "#8a93a8" }, grid: { display: false } }
       }
     }
   });
@@ -1220,266 +1468,201 @@ function drawScoreDist(dist) {
 // 상세 모달
 // ============================================================
 async function showDetail(sym) {
-  if (!sym) return;
-  STATE.detailSym = sym;
-  const modal = document.getElementById('detailModal');
-  modal.classList.add('open');
-  const body = document.getElementById('detailBody');
-  body.innerHTML = `<div class="empty">⏳ ${sym} 로딩중...</div>`;
+  const modal = document.getElementById("detailModal");
+  const body = document.getElementById("detailBody");
+  body.innerHTML = `<div class="loading">불러오는 중... <strong>${sym}</strong></div>`;
+  modal.classList.add("show");
+  document.body.style.overflow = "hidden";
 
   try {
-    // 병렬 로드
-    const [bd, opt, fund, news, hist] = await Promise.all([
-      fetch(`/api/scores/${sym}/breakdown`).then(r => r.json()),
-      fetch(`/api/options/${sym}`).then(r => r.json()).catch(() => null),
-      fetch(`/api/fundamentals/${sym}`).then(r => r.json()).catch(() => null),
-      fetch(`/api/news/${sym}?limit=8`).then(r => r.json()).catch(() => null),
-      fetch(`/api/scores/${sym}/history?limit=100`).then(r => r.json()).catch(() => null),
+    const [bdR, optR, fundR, newsR, histR] = await Promise.all([
+      fetch(`/api/scores/${sym}/breakdown`).then(r => r.json()).catch(() => ({})),
+      fetch(`/api/options/${sym}`).then(r => r.json()).catch(() => ({})),
+      fetch(`/api/fundamentals/${sym}`).then(r => r.json()).catch(() => ({})),
+      fetch(`/api/news/${sym}?limit=10`).then(r => r.json()).catch(() => ({})),
+      fetch(`/api/scores/${sym}/history?limit=100`).then(r => r.json()).catch(() => ({}))
     ]);
-
-    if (bd.error) {
-      body.innerHTML = `<div class="empty">❌ ${sym} 데이터 없음</div>`;
-      return;
-    }
-
-    body.innerHTML = renderDetail(sym, bd, opt, fund, news, hist);
-
-    // 차트 그리기 (DOM 생성 후)
-    setTimeout(() => {
-      drawScoreHistory(hist);
-      drawBreakdown(bd.breakdown);
-    }, 50);
+    renderDetail(sym, bdR, optR, fundR, newsR, histR);
   } catch (e) {
-    console.error(e);
-    body.innerHTML = `<div class="empty">❌ 로딩 실패</div>`;
+    body.innerHTML = `<div class="loading" style="color:var(--red)">상세 로드 실패: ${e.message}</div>`;
   }
 }
 
 function closeDetail() {
-  document.getElementById('detailModal').classList.remove('open');
-  STATE.detailSym = null;
-  // 차트 정리
-  ['scoreHist', 'breakdownChart'].forEach(k => {
-    if (STATE.charts[k]) {
-      STATE.charts[k].destroy();
-      delete STATE.charts[k];
-    }
-  });
+  const modal = document.getElementById("detailModal");
+  modal.classList.remove("show");
+  document.body.style.overflow = "";
+  if (detailCharts.history) { detailCharts.history.destroy(); detailCharts.history = null; }
+  if (detailCharts.breakdown) { detailCharts.breakdown.destroy(); detailCharts.breakdown = null; }
 }
 
 function renderDetail(sym, bd, opt, fund, news, hist) {
+  const body = document.getElementById("detailBody");
   const m = bd.metrics || {};
-  const score = bd.score || 0;
+  const score = bd.sqs_score ?? m.sqs_score ?? 0;
+  const grade = bd.grade || m.grade || "NORMAL";
 
-  // 헤더
-  let html = `
-    <h2 style="display:flex;gap:12px;align-items:center">
-      <span class="sym" style="font-size:1.3em">${escapeHtml(sym)}</span>
-      <span class="muted">${escapeHtml(bd.name || '')}</span>
-      <span style="margin-left:auto;color:${scoreColor(score)};font-size:1.3em">${score.toFixed(1)}</span>
-      ${bd.grade ? `<span class="grade ${bd.grade}">${bd.grade}</span>` : ''}
-    </h2>
-    <div class="muted" style="margin-top:4px">${fmtPrice(bd.price)}</div>
-  `;
-
-  // 점수 히스토리 차트
-  html += `
-    <div class="detail-section">
-      <h3>📈 점수 히스토리</h3>
-      <div class="chart-wrap"><canvas id="scoreHistCanvas"></canvas></div>
-    </div>
-  `;
-
-  // 점수 구성 (breakdown)
-  if (bd.breakdown) {
-    const items = Object.entries(bd.breakdown).map(([k, v]) => {
-      const val = (typeof v === 'object' ? v.val : v) || 0;
-      const max = (typeof v === 'object' ? v.max : 0) || 0;
-      return `<li><span class="label">${escapeHtml(k)}</span><span class="val">${Number(val).toFixed(2)}</span><span class="max">/${max}</span></li>`;
-    }).join('');
-    html += `
-      <div class="detail-section">
-        <h3>📊 점수 구성</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <ul class="breakdown-list">${items}</ul>
-          <div class="chart-wrap"><canvas id="breakdownCanvas"></canvas></div>
-        </div>
-      </div>
-    `;
+  let warnings = "";
+  if (opt && opt.warning) warnings += `<div class="warning-banner">⚠️ ${opt.warning}</div>`;
+  if (fund && fund.warnings && fund.warnings.length) {
+    fund.warnings.forEach(w => warnings += `<div class="warning-banner">⚠️ ${w}</div>`);
   }
 
-  // 핵심 지표
-  html += `
-    <div class="detail-section">
-      <h3>🔑 핵심 지표</h3>
+  body.innerHTML = `
+    <h2>${sym} <span class="grade g-${grade}" style="font-size:13px;vertical-align:middle">${grade}</span></h2>
+    <div class="subtitle">${m.name || ""} · ${m.theme || ""}</div>
+    ${warnings}
+
+    <div class="modal-section">
+      <h3>핵심 지표</h3>
       <div class="metric-grid">
-        <div><label>SI%</label><b>${(m.si_pct||0).toFixed(2)}%</b></div>
-        <div><label>CTB%</label><b>${(m.ctb||0).toFixed(2)}%</b></div>
-        <div><label>DTC</label><b>${(m.dtc||0).toFixed(2)}</b></div>
-        <div><label>Utilization</label><b>${(m.util||0).toFixed(1)}%</b></div>
-        <div><label>유동주식</label><b>${fmtNum(m.float_shares, 1)}</b></div>
-        <div><label>Rotation</label><b>${(m.rotation||0).toFixed(2)}x</b></div>
-        <div><label>거래량 스파이크</label><b>${(m.vol_spike||0).toFixed(2)}x</b></div>
-        <div><label>52주 거리</label><b>${((m.dist_52w||0)*100).toFixed(1)}%</b></div>
-        <div><label>RSI</label><b>${(m.rsi14||50).toFixed(0)}</b></div>
-        <div><label>소셜 속도</label><b>${(m.social_velocity||0).toFixed(0)}%</b></div>
-        <div><label>촉매</label><b>${m.has_catalyst ? '✅' : '-'}</b></div>
-        <div><label>MACD</label><b>${(m.macd_histogram||0).toFixed(3)}</b></div>
-        <div><label>매집점수</label><b>${(m.acc_score||0).toFixed(0)}</b></div>
+        <div class="metric-item"><div class="lbl">SQS 점수</div><div class="val ${scoreClass(score)}">${fmtNum(score, 1)}</div></div>
+        <div class="metric-item"><div class="lbl">가격</div><div class="val">$${fmtNum(m.price)}</div></div>
+        <div class="metric-item"><div class="lbl">변동률</div><div class="val ${pctClass(m.change_pct)}">${fmtPct(m.change_pct)}</div></div>
+        <div class="metric-item"><div class="lbl">거래량</div><div class="val">${fmtVol(m.volume)}</div></div>
+        <div class="metric-item"><div class="lbl">시가총액</div><div class="val">${fmtMcap(m.market_cap)}</div></div>
+        <div class="metric-item"><div class="lbl">SI %</div><div class="val">${fmtPct((m.si_pct || 0) * 100, 2)}</div></div>
+        <div class="metric-item"><div class="lbl">CTB %</div><div class="val">${fmtPct(m.ctb, 2)}</div></div>
+        <div class="metric-item"><div class="lbl">RSI(14)</div><div class="val">${fmtNum(m.rsi14, 1)}</div></div>
+        <div class="metric-item"><div class="lbl">MACD Hist</div><div class="val">${fmtNum(m.macd_histogram, 3)}</div></div>
+        <div class="metric-item"><div class="lbl">누적점수</div><div class="val ${scoreClass(m.acc_score || 0)}">${fmtNum(m.acc_score, 1)}</div></div>
+        <div class="metric-item"><div class="lbl">다크풀 비율</div><div class="val">${fmtPct((m.dark_pool_ratio || 0) * 100, 1)}</div></div>
+        <div class="metric-item"><div class="lbl">유동주식</div><div class="val">${fmtVol(m.float_shares)}</div></div>
       </div>
     </div>
+
+    ${hist && hist.history && hist.history.length ? `
+      <div class="modal-section">
+        <h3>점수 히스토리</h3>
+        <canvas id="histChart" height="80"></canvas>
+      </div>
+    ` : ""}
+
+    ${bd && bd.breakdown ? `
+      <div class="modal-section">
+        <h3>점수 구성</h3>
+        <canvas id="bdChart" height="80"></canvas>
+      </div>
+    ` : ""}
+
+    ${opt && opt.contract_count ? `
+      <div class="modal-section">
+        <h3>옵션 체인</h3>
+        <div class="metric-grid">
+          <div class="metric-item"><div class="lbl">감마 집중도</div><div class="val">${fmtPct((opt.gamma_concentration || 0) * 100, 1)}</div></div>
+          <div class="metric-item"><div class="lbl">C/P 비율</div><div class="val">${fmtNum(opt.call_put_ratio, 2)}</div></div>
+          <div class="metric-item"><div class="lbl">특이옵션</div><div class="val">${fmtNum(opt.unusual_options_score, 1)}</div></div>
+          <div class="metric-item"><div class="lbl">맥스페인</div><div class="val">$${fmtNum(opt.max_pain)}</div></div>
+          <div class="metric-item"><div class="lbl">콜 OI</div><div class="val">${fmtVol(opt.total_call_oi)}</div></div>
+          <div class="metric-item"><div class="lbl">풋 OI</div><div class="val">${fmtVol(opt.total_put_oi)}</div></div>
+          <div class="metric-item"><div class="lbl">콜 거래량</div><div class="val">${fmtVol(opt.total_call_volume)}</div></div>
+          <div class="metric-item"><div class="lbl">풋 거래량</div><div class="val">${fmtVol(opt.total_put_volume)}</div></div>
+          <div class="metric-item"><div class="lbl">평균 IV</div><div class="val">${fmtPct((opt.avg_iv || 0) * 100, 1)}</div></div>
+          <div class="metric-item"><div class="lbl">컨트랙트</div><div class="val">${fmtInt(opt.contract_count)}</div></div>
+        </div>
+      </div>
+    ` : ""}
+
+    ${fund && (fund.debt_to_equity !== undefined || fund.cash_runway_months !== undefined) ? `
+      <div class="modal-section">
+        <h3>펀더멘털</h3>
+        <div class="metric-grid">
+          <div class="metric-item"><div class="lbl">부채/자본</div><div class="val">${fmtNum(fund.debt_to_equity, 2)}</div></div>
+          <div class="metric-item"><div class="lbl">현금 런웨이</div><div class="val">${fmtNum(fund.cash_runway_months, 1)}개월</div></div>
+          <div class="metric-item"><div class="lbl">매출 성장 YoY</div><div class="val ${pctClass(fund.revenue_growth_yoy)}">${fmtPct(fund.revenue_growth_yoy)}</div></div>
+          <div class="metric-item"><div class="lbl">시가총액</div><div class="val">${fmtMcap(fund.market_cap)}</div></div>
+        </div>
+      </div>
+    ` : ""}
+
+    ${news && news.items && news.items.length ? `
+      <div class="modal-section">
+        <h3>뉴스 (${news.items.length})</h3>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${news.items.slice(0, 10).map(n => `
+            <a href="${n.url || '#'}" target="_blank" rel="noopener" style="font-size:12px;padding:6px;background:var(--bg2);border-radius:4px;display:block">
+              <div style="font-weight:600">${(n.title || "").substring(0, 100)}</div>
+              <div style="color:var(--text-dim);font-size:10px;margin-top:2px">
+                ${n.publisher || ""} · ${fmtDate(n.published_utc || n.t)}
+                ${n.catalyst ? '<span style="color:var(--orange);margin-left:6px">⚡촉매</span>' : ""}
+              </div>
+            </a>
+          `).join("")}
+        </div>
+      </div>
+    ` : ""}
   `;
 
-  // 옵션 체인
-  if (opt && !opt.error) {
-    const warn = opt.warning ? `<div class="warning-banner">⚠️ ${opt.warning}</div>` : '';
-    html += `
-      <div class="detail-section">
-        <h3>🎯 옵션 체인</h3>
-        ${warn}
-        <div class="metric-grid">
-          <div><label>감마 집중도</label><b>${((opt.gamma_concentration||0)*100).toFixed(1)}%</b></div>
-          <div><label>C/P 비율</label><b>${(opt.call_put_ratio||0).toFixed(2)}</b></div>
-          <div><label>이상 옵션 점수</label><b>${(opt.unusual_options_score||0).toFixed(0)}</b></div>
-          <div><label>Max Pain</label><b>${fmtPrice(opt.max_pain)}</b></div>
-          <div><label>콜 OI</label><b>${fmtNum(opt.total_call_oi, 0)}</b></div>
-          <div><label>풋 OI</label><b>${fmtNum(opt.total_put_oi, 0)}</b></div>
-          <div><label>콜 거래량</label><b>${fmtNum(opt.total_call_volume, 0)}</b></div>
-          <div><label>풋 거래량</label><b>${fmtNum(opt.total_put_volume, 0)}</b></div>
-          <div><label>IV 평균</label><b>${((opt.iv_avg||0)*100).toFixed(1)}%</b></div>
-        </div>
-      </div>
-    `;
+  // 차트 렌더
+  if (hist && hist.history && hist.history.length) {
+    setTimeout(() => drawScoreHistory(hist.history), 50);
   }
-
-  // 펀더멘털
-  if (fund && !fund.error) {
-    const warns = (fund.warnings || []).map(w => `<div class="warn-item">⚠️ ${escapeHtml(w)}</div>`).join('');
-    html += `
-      <div class="detail-section">
-        <h3>💼 펀더멘털</h3>
-        ${warns ? `<div class="warning-banner">${warns}</div>` : ''}
-        <div class="metric-grid">
-          <div><label>시가총액</label><b>${fmtNum(fund.market_cap, 2)}</b></div>
-          <div><label>부채/자본</label><b>${(fund.debt_to_equity||0).toFixed(2)}</b></div>
-          <div><label>현금소진</label><b>${(fund.cash_runway_months||0).toFixed(0)}개월</b></div>
-          <div><label>매출 YoY</label><b>${(fund.revenue_growth_yoy||0).toFixed(1)}%</b></div>
-          <div><label>매출</label><b>${fmtNum(fund.total_revenue, 1)}</b></div>
-          <div><label>순이익</label><b>${fmtNum(fund.net_income, 1)}</b></div>
-          <div><label>현금</label><b>${fmtNum(fund.cash_and_equivalents, 1)}</b></div>
-          <div><label>부채</label><b>${fmtNum(fund.total_debt, 1)}</b></div>
-        </div>
-      </div>
-    `;
+  if (bd && bd.breakdown) {
+    setTimeout(() => drawBreakdown(bd.breakdown), 50);
   }
-
-  // 뉴스
-  if (news && news.news && news.news.length > 0) {
-    const newsHtml = news.news.map(n => `
-      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
-        <a href="${escapeHtml(n.url || '#')}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">
-          ${escapeHtml(n.title || '')}
-        </a>
-        <div class="muted" style="font-size:0.82em;margin-top:3px">
-          ${escapeHtml(n.publisher || '')} · ${n.published_utc ? new Date(n.published_utc).toLocaleString('ko-KR') : ''}
-        </div>
-      </div>
-    `).join('');
-    html += `
-      <div class="detail-section">
-        <h3>📰 최근 뉴스 ${news.has_catalyst ? '<span class="grade HIGH" style="margin-left:8px">촉매 감지</span>' : ''}</h3>
-        ${newsHtml}
-      </div>
-    `;
-  }
-
-  return html;
 }
 
 function drawScoreHistory(hist) {
-  if (!hist || !hist.items) return;
-  const ctx = document.getElementById('scoreHistCanvas');
+  const ctx = document.getElementById("histChart");
   if (!ctx) return;
-  if (STATE.charts.scoreHist) STATE.charts.scoreHist.destroy();
-
-  const items = hist.items || [];
-  const labels = items.map(it => {
-    const d = new Date(it.t * 1000);
-    return d.toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit'});
+  if (detailCharts.history) detailCharts.history.destroy();
+  const labels = hist.map(h => {
+    const d = new Date((h.t || 0) * 1000);
+    return d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
   });
-  const data = items.map(it => it.s);
-
-  STATE.charts.scoreHist = new Chart(ctx, {
-    type: 'line',
+  const data = hist.map(h => h.score);
+  detailCharts.history = new Chart(ctx, {
+    type: "line",
     data: {
       labels,
       datasets: [{
-        label: 'SQS 점수',
+        label: "SQS",
         data,
-        borderColor: '#6c7dff',
-        backgroundColor: 'rgba(108,125,255,0.15)',
+        borderColor: "#4a9eff",
+        backgroundColor: "rgba(74,158,255,0.15)",
         fill: true,
         tension: 0.3,
-        pointRadius: 2,
+        pointRadius: 0
       }]
     },
     options: {
       responsive: true,
-      maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#888', maxTicksLimit: 10 }, grid: { color: '#2a2a4a' } },
-        y: { ticks: { color: '#888' }, grid: { color: '#2a2a4a' }, suggestedMin: 0, suggestedMax: 100 },
+        y: { ticks: { color: "#8a93a8" }, grid: { color: "rgba(138,147,168,0.15)" } },
+        x: { ticks: { color: "#8a93a8", maxRotation: 0, autoSkipPadding: 20 }, grid: { display: false } }
       }
     }
   });
 }
 
 function drawBreakdown(bd) {
-  if (!bd) return;
-  const ctx = document.getElementById('breakdownCanvas');
+  const ctx = document.getElementById("bdChart");
   if (!ctx) return;
-  if (STATE.charts.breakdownChart) STATE.charts.breakdownChart.destroy();
-
-  const entries = Object.entries(bd);
-  const labels = entries.map(([k]) => k);
-  const values = entries.map(([, v]) => (typeof v === 'object' ? v.val : v) || 0);
-  const maxes = entries.map(([, v]) => (typeof v === 'object' ? v.max : 0) || 0);
-
-  STATE.charts.breakdownChart = new Chart(ctx, {
-    type: 'bar',
+  if (detailCharts.breakdown) detailCharts.breakdown.destroy();
+  const labels = Object.keys(bd);
+  const data = Object.values(bd).map(v => Number(v) || 0);
+  detailCharts.breakdown = new Chart(ctx, {
+    type: "bar",
     data: {
       labels,
-      datasets: [
-        {
-          label: '획득',
-          data: values,
-          backgroundColor: '#6c7dff',
-        },
-        {
-          label: '최대',
-          data: maxes,
-          backgroundColor: 'rgba(255,255,255,0.08)',
-        }
-      ]
+      datasets: [{
+        label: "점수",
+        data,
+        backgroundColor: "#4a9eff"
+      }]
     },
     options: {
-      indexAxis: 'y',
+      indexAxis: "y",
       responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#888' } } },
+      plugins: { legend: { display: false } },
       scales: {
-        x: { stacked: false, ticks: { color: '#888' }, grid: { color: '#2a2a4a' } },
-        y: { stacked: false, ticks: { color: '#888', font: { size: 10 } }, grid: { color: '#2a2a4a' } },
+        x: { ticks: { color: "#8a93a8" }, grid: { color: "rgba(138,147,168,0.15)" } },
+        y: { ticks: { color: "#8a93a8" }, grid: { display: false } }
       }
     }
   });
 }
-
-// ESC 키로 모달 닫기
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeDetail();
-});
 
 // ============================================================
 // 초기화
@@ -1487,17 +1670,28 @@ document.addEventListener('keydown', e => {
 async function init() {
   bindTabs();
   bindSort();
+  bindFilterInputs();
   await preloadSnapshot();
   await loadMarket();
   conn();
-
-  // 주기적 갱신
-  setInterval(chkLoad, 5000);          // 로딩 상태 (준비 안됐을 때만)
-  setInterval(loadMarket, 60000);      // 시장 상태 1분
+  setInterval(chkLoad, 5000);
+  setInterval(loadMarket, 60000);
+  // 5분마다 스냅샷 재요청 (WS 미연결 시 폴백)
+  setInterval(async () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      await preloadSnapshot();
+    }
+  }, 300000);
 }
 
-init();
+// ESC 키로 모달 닫기
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeDetail();
+});
+
+window.addEventListener("DOMContentLoaded", init);
 </script>
+
 </body>
 </html>
 """
