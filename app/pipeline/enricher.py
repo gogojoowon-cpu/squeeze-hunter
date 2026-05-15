@@ -4,6 +4,7 @@
 - 우선순위 큐: 상위 500 (30초) / 중위 2000 (5분) / 나머지 (30분)
 - 데이터별 차등 갱신 주기
 - VERBOSE_LOGS=true 환경변수로 주기 갱신 로그 ON/OFF
+- ⭐ v2: SI% 후처리 계산 + 우선순위 큐 개선 (squeeze 후보 우선)
 """
 import os
 import time
@@ -18,7 +19,7 @@ from app.config import (
     TOP_N_SYMBOLS,
     MID_N_SYMBOLS,
 )
-from app.scoring import sqs, grade
+from app.scoring import sqs, grade, estimate_ctb
 from app.providers import polygon, social
 from app.pipeline.analyzers import detect_anomalies, check_event_alerts
 
@@ -51,6 +52,33 @@ _last = {
     "rescore_low": 0,
     "anomaly": 0,
 }
+
+
+# ============================================================
+# ⭐ SI% 후처리 (Float 데이터 받은 후 계산)
+# ============================================================
+def _recompute_si_pct():
+    """
+    SI shares + Float shares → SI% 계산.
+    fetch_short_interest_batch()는 si_shares만 주고,
+    fetch_float_batch()는 float_shares를 주므로 둘 다 들어온 후 계산해야 함.
+    """
+    cnt = 0
+    for sym, m in state.stocks.items():
+        si_sh = m.get("si_shares", 0) or 0
+        fs = m.get("float_shares", 0) or 0
+        if si_sh > 0 and fs > 0:
+            si_pct = round((si_sh / fs) * 100, 2)
+            # 비현실적인 값 (>100%) 은 cap
+            if si_pct > 100:
+                si_pct = 100.0
+            m["si_pct"] = si_pct
+            # CTB / Util 추정 (실제 데이터 없으므로 SI%+DTC 기반)
+            ctb, util = estimate_ctb(si_pct, m.get("dtc", 0) or 0)
+            m["ctb"] = ctb
+            m["util"] = util
+            cnt += 1
+    return cnt
 
 
 # ============================================================
@@ -95,6 +123,11 @@ def enrich_all():
             fl_cnt += 1
     print(f"  ✅ Float {fl_cnt}개")
 
+    # 3.5) ⭐ SI% 후처리 계산 (SI shares + Float shares 결합)
+    print("  🧮 SI% 계산 중...")
+    si_pct_cnt = _recompute_si_pct()
+    print(f"  ✅ SI% 계산 {si_pct_cnt}개")
+
     # 4) 일봉 + 매집 + 이상거래 (상위 1000개만 초기에)
     print("  📊 일봉/매집/이상거래 분석 (상위 1000개)...")
     top_syms = _get_priority_symbols(1000)
@@ -135,7 +168,7 @@ def enrich_all():
             news_cnt += 1
     print(f"  ✅ 뉴스 {news_cnt}개")
 
-    # 7) 옵션 체인 (상위 200)
+    # 7) 옵션 체인 (상위 200) — 권한 없으면 자동 skip
     print("  📊 옵션 체인 (상위 200개)...")
     opt_syms = _get_priority_symbols(200)
     opt_cnt = 0
@@ -198,18 +231,40 @@ def enrich_all():
 
 
 # ============================================================
-# 우선순위 기반 심볼 선택
+# ⭐ 우선순위 기반 심볼 선택 (Squeeze 후보 우선)
 # ============================================================
 def _get_priority_symbols(n):
-    """점수 + 매집 + 거래량 기준 상위 N개"""
+    """
+    우선순위 기반 상위 N개 종목 선택.
+    
+    초기엔 SQS 점수가 0이므로 다음 순으로 우선시:
+    1. acc_score (매집 점수)
+    2. 거래량
+    3. SI 데이터 있는 종목 (스퀴즈 후보군)
+    4. $1~$50 가격대 (스퀴즈 자주 발생)
+    5. 대형주 페널티 (AAPL/MSFT 등 거대 종목 배제)
+    """
     items = []
     for sym, m in state.stocks.items():
-        if m.get("price", 0) <= 0:
+        price = m.get("price", 0) or 0
+        if price <= 0:
             continue
         score = m.get("sqs_score", 0) or 0
         acc = m.get("acc_score", 0) or 0
         vol = m.get("volume", 0) or 0
-        priority = score * 2 + acc + (vol / 1_000_000) * 0.5
+        si_sh = m.get("si_shares", 0) or 0
+        si_pct = m.get("si_pct", 0) or 0
+        mcap = m.get("market_cap", 0) or 0
+
+        priority = (
+            score * 3                                # 점수 (가장 강한 신호)
+            + acc * 1.5                              # 매집 점수
+            + (vol / 1_000_000) * 0.5                # 거래량 (백만 단위)
+            + (20 if si_sh > 0 else 0)               # SI 데이터 있으면 큰 보너스
+            + (si_pct * 0.5)                         # SI% 높을수록 우선
+            + (5 if 1 <= price <= 50 else 0)         # squeeze 가능 가격대 보너스
+            - (10 if mcap > 100e9 else 0)            # 대형주(>$100B) 페널티
+        )
         items.append((sym, priority))
     items.sort(key=lambda x: -x[1])
     return [s for s, _ in items[:n]]
@@ -381,7 +436,7 @@ def _refresh_news():
 
 
 def _refresh_options():
-    """옵션 체인 갱신 (15분, 상위 200)"""
+    """옵션 체인 갱신 (15분, 상위 200) — 권한 없으면 자동 skip"""
     try:
         syms = _get_priority_symbols(200)
         cnt = 0
@@ -409,7 +464,9 @@ def _refresh_si():
                 state.stocks[sym].update(d)
                 _mark_dirty(sym)
                 cnt += 1
-        _log(f"🔄 [1일] SI {cnt}개")
+        # ⭐ SI 갱신 후 si_pct 재계산
+        _recompute_si_pct()
+        _log(f"🔄 [1일] SI {cnt}개 + si_pct 재계산")
     except Exception as e:
         print(f"⚠️ SI 실패: {e}")
 
@@ -439,7 +496,9 @@ def _refresh_float():
                 state.stocks[sym].update(d)
                 _mark_dirty(sym)
                 cnt += 1
-        _log(f"🔄 [1일] Float {cnt}개")
+        # ⭐ Float 갱신 후 si_pct 재계산 (float이 바뀌면 si_pct도 바뀜)
+        _recompute_si_pct()
+        _log(f"🔄 [1일] Float {cnt}개 + si_pct 재계산")
     except Exception as e:
         print(f"⚠️ Float 실패: {e}")
 
