@@ -4,6 +4,11 @@ Short Squeeze Hunter v3 - FastAPI 진입점
 - 30초 폴링 + Polygon WebSocket 실시간 스트리밍
 - 클라이언트 WebSocket 푸시
 """
+import warnings
+# RuntimeWarning 억제 (tracemalloc, coroutine 경고 등)
+# ⚠️ WebSocket async 실행 버그 수정 후에만 활성화할 것
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
 import asyncio
 import threading
 from contextlib import asynccontextmanager
