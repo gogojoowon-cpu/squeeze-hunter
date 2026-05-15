@@ -41,34 +41,50 @@ async def _connect_and_stream():
         return
 
     async with websockets.connect(WS_URL, ping_interval=20) as ws:
-        # 1) 인증
+        # 1) 첫 메시지: 연결 확인 (connected)
+        first_msg = await ws.recv()
+        if "connected" not in first_msg:
+            print(f"⚠️ 예상치 못한 첫 메시지: {first_msg}")
+
+        # 2) 인증 요청 전송
         await ws.send(json.dumps({"action": "auth", "params": POLYGON_API_KEY}))
+
+        # 3) 인증 응답 대기 (auth_success 또는 auth_failed)
         auth_resp = await ws.recv()
         if "auth_success" not in auth_resp:
-            print(f"❌ 인증 실패: {auth_resp}")
+            print(f"❌ Polygon WS 인증 실패: {auth_resp}")
+            key_tail = POLYGON_API_KEY[-4:] if POLYGON_API_KEY else "NONE"
+            print(f"   API 키 확인 필요 (현재 키 끝 4자리: ...{key_tail})")
             return
         print("✅ Polygon WS 인증 성공")
 
-        # 2) 상위 N개 종목 구독 (분봉 AM)
+        # 4) 상위 N개 종목 구독 (분봉 AM)
         top_syms = _get_top_symbols(WS_TOP_N)
         if not top_syms:
-            print("⚠️ 구독할 종목 없음")
+            print("⚠️ 구독할 종목 없음 — 점수 계산 후 재시도")
             return
 
-        # 분봉 (AM) + 거래 (T) 둘 다 구독
-        # AM.{symbol} = 분 단위 집계 (가격/거래량)
         subscribe = "AM." + ",AM.".join(top_syms)
         await ws.send(json.dumps({"action": "subscribe", "params": subscribe}))
+        
+        # 구독 응답 받기
+        try:
+            sub_resp = await asyncio.wait_for(ws.recv(), timeout=5)
+        except asyncio.TimeoutError:
+            pass
         print(f"📡 Polygon WS 구독: {len(top_syms)}개 종목 (분봉)")
 
         state.ws_connected = True
 
-        # 3) 메시지 수신 루프
+        # 5) 메시지 수신 루프
         async for message in ws:
             try:
                 _handle_message(message)
             except Exception as e:
                 print(f"⚠️ WS 메시지 처리 오류: {e}")
+        
+        state.ws_connected = False
+
 
 
 def _get_top_symbols(n: int) -> list[str]:
