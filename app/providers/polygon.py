@@ -403,6 +403,10 @@ def fetch_ticker_details(sym: str) -> dict:
 # Short Interest / Short Volume
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_short_interest_batch() -> dict:
+    """
+    Short Interest 일괄 수집.
+    si_pct는 여기서 계산하지 않음 (float 데이터 필요) → enricher에서 후처리.
+    """
     if not _key_ok():
         return {}
     out = {}
@@ -436,13 +440,14 @@ def fetch_short_interest_batch() -> dict:
                 out[sym] = {
                     "si_shares": si_sh,
                     "dtc": round(dtc, 2),
-                    "avg_vol": avg_v,
-                    "si_pct": 0.0,
+                    "avg_vol_si": avg_v,  # ← 이름 변경 (aggs의 avg_vol과 충돌 방지)
+                    # si_pct는 enricher에서 후처리
                 }
         print(f"  ✅ Short Interest: {len(out)}개")
     except Exception as e:
         print(f"  ❌ SI 오류: {e}")
     return out
+
 
 
 def fetch_short_volume_batch():
@@ -549,6 +554,7 @@ def fetch_short_volume_batch():
 # Float
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_float_batch() -> dict:
+    """Float 일괄 수집 - scoring.py가 읽는 'float_shares' 키로 통일"""
     if not _key_ok():
         return {}
     out = {}
@@ -570,7 +576,11 @@ def fetch_float_batch() -> dict:
                 ff = int(res.get("free_float", 0) or 0)
                 ffp = float(res.get("free_float_percent", 0) or 0)
                 if sym and ff > 0:
-                    out[sym] = {"free_float": ff, "free_float_pct": round(ffp, 2)}
+                    out[sym] = {
+                        "float_shares": ff,        # ← scoring.py 기대 키
+                        "free_float": ff,           # 호환용
+                        "free_float_pct": round(ffp, 2),
+                    }
             next_url = data.get("next_url", "")
             if not next_url:
                 break
@@ -585,10 +595,12 @@ def fetch_float_batch() -> dict:
     return out
 
 
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 기술 지표 (MACD)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_macd(sym: str) -> dict:
+    """MACD - scoring.py가 읽는 'macd_*' prefix 키로 통일"""
     if not _key_ok():
         return {}
     try:
@@ -610,11 +622,12 @@ def fetch_macd(sym: str) -> dict:
         hist_v = float(cur.get("histogram", 0) or 0)
         prev_h = float(prev.get("histogram", 0) or 0)
         return {
-            "macd": round(float(cur.get("value", 0) or 0), 4),
-            "signal": round(float(cur.get("signal", 0) or 0), 4),
-            "histogram": round(hist_v, 4),
-            "golden_cross": hist_v > 0 and prev_h <= 0,
-            "dead_cross": hist_v < 0 and prev_h >= 0,
+            # ✅ scoring.py 기대 키로 통일
+            "macd_value": round(float(cur.get("value", 0) or 0), 4),
+            "macd_signal": round(float(cur.get("signal", 0) or 0), 4),
+            "macd_histogram": round(hist_v, 4),
+            "macd_golden_cross": hist_v > 0 and prev_h <= 0,
+            "macd_dead_cross": hist_v < 0 and prev_h >= 0,
         }
     except Exception:
         return {}
@@ -969,6 +982,7 @@ def fetch_earnings_estimate(sym: str) -> dict:
 # 뉴스
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_news_batch(limit: int = 1000) -> dict:
+    """뉴스 - scoring.py가 읽는 'sentiment' 키로 통일"""
     from app.config import CATALYST_KEYWORDS
     if not _key_ok():
         return {}
@@ -1009,12 +1023,13 @@ def fetch_news_batch(limit: int = 1000) -> dict:
                     out[sym]["neg"] += 1
         for sym in out:
             n = out[sym]["news_count"]
-            out[sym]["sentiment_score"] = round((out[sym]["pos"] - out[sym]["neg"]) / max(n, 1), 2)
+            # ✅ 'sentiment' 키로 (scoring.py가 기대하는 이름)
+            out[sym]["sentiment"] = round((out[sym]["pos"] - out[sym]["neg"]) / max(n, 1), 2)
+            out[sym]["sentiment_score"] = out[sym]["sentiment"]  # 호환용
         print(f"  ✅ 뉴스: {len(out)}개 종목")
     except Exception as e:
         print(f"  ❌ 뉴스 오류: {e}")
     return out
-
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 실시간 스냅샷
