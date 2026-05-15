@@ -447,86 +447,101 @@ def fetch_short_interest_batch() -> dict:
 
 def fetch_short_volume_batch():
     """
-    Short Volume + Dark Pool 비율 수집
-    엔드포인트: /stocks/v1/short-volume (Starter 플랜 포함)
+    Massive(Polygon) /stocks/v1/short-volume 엔드포인트로 
+    전 종목 숏볼륨 + 다크풀 데이터 일괄 수집.
     
-    Dark Pool 정의: ADF + Nasdaq Carteret + Nasdaq Chicago = off-exchange (다크풀)
-    NYSE 분량을 뺀 나머지가 다크풀로 간주됨
+    Returns:
+        dict: { "AAPL": {
+                  "short_volume": int,
+                  "total_volume": int,
+                  "short_volume_ratio": float (0~1),
+                  "dark_pool_ratio": float (0~1),
+                  "date": "YYYY-MM-DD"
+                }, ... }
     """
-    if not _key_ok():
-        return {}
-
-    from datetime import datetime, timedelta
+    from app.config import POLYGON_API_KEY
+    import requests
+    
+    url = "https://api.polygon.io/stocks/v1/short-volume"
     result = {}
     
-    # 가장 최근 영업일 (오늘 ~ 7일 전까지 순회하며 데이터 있는 날 찾음)
-    base_url = "https://api.polygon.io/stocks/v1/short-volume"
+    # 가장 최근 거래일 데이터 (date 파라미터 생략 시 최신)
+    params = {
+        "limit": 50000,
+        "sort": "ticker.asc",
+        "apiKey": POLYGON_API_KEY,
+    }
     
-    # 날짜를 명시하지 않으면 가장 최근 데이터를 가져옴 (sort=date.desc)
-    # 페이지네이션으로 전체 종목 수집
-    next_url = (
-        f"{base_url}?limit=50000&sort=date.desc&apiKey={POLYGON_API_KEY}"
-    )
+    page_count = 0
+    max_pages = 5  # 최대 5페이지 (25만건)
+    next_url = url
     
-    seen_per_ticker = set()   # 가장 최근 날짜 1건만 사용
-    pages = 0
-    
-    while next_url and pages < 5:   # 최대 5페이지 (안전장치)
-        try:
-            r = requests.get(next_url, timeout=30)
-            if r.status_code != 200:
-                print(f"  ⚠️ short-volume HTTP {r.status_code}: {r.text[:200]}")
+    try:
+        while next_url and page_count < max_pages:
+            if page_count == 0:
+                resp = requests.get(next_url, params=params, timeout=30)
+            else:
+                # next_url에는 cursor가 이미 포함되어 있음
+                sep = "&" if "?" in next_url else "?"
+                resp = requests.get(
+                    f"{next_url}{sep}apiKey={POLYGON_API_KEY}",
+                    timeout=30
+                )
+            
+            if resp.status_code != 200:
+                print(f"⚠️ Short Volume HTTP {resp.status_code}: {resp.text[:200]}")
                 break
             
-            data = r.json()
-            rows = data.get("results", []) or []
+            data = resp.json()
+            results = data.get("results", [])
             
-            for row in rows:
-                tk = row.get("ticker")
-                if not tk or tk in seen_per_ticker:
+            if not results:
+                break
+            
+            for r in results:
+                ticker = r.get("ticker")
+                if not ticker:
                     continue
-                seen_per_ticker.add(tk)
                 
-                short_vol = row.get("short_volume")
-                total_vol = row.get("total_volume")
-                sv_ratio = row.get("short_volume_ratio")
+                short_vol = r.get("short_volume", 0) or 0
+                total_vol = r.get("total_volume", 0) or 0
+                sv_ratio = r.get("short_volume_ratio", 0) or 0
                 
-                # 다크풀 거래량 = ADF + Nasdaq Carteret + Nasdaq Chicago
-                # (NYSE는 정규 거래소이므로 제외)
-                adf = (row.get("adf_short_volume") or 0) + (row.get("adf_short_volume_exempt") or 0)
-                nas_c = (row.get("nasdaq_carteret_short_volume") or 0) + (row.get("nasdaq_carteret_short_volume_exempt") or 0)
-                nas_ch = (row.get("nasdaq_chicago_short_volume") or 0) + (row.get("nasdaq_chicago_short_volume_exempt") or 0)
+                # short_volume_ratio가 퍼센트(0~100)면 0~1로 변환
+                if sv_ratio > 1:
+                    sv_ratio = sv_ratio / 100.0
                 
-                dark_pool_short = adf + nas_c + nas_ch
+                # 다크풀 추정: ADF (FINRA Alternative Display Facility) 
+                # + Nasdaq Carteret/Chicago 비공개 거래소 데이터
+                adf = r.get("adf_short_volume", 0) or 0
+                nas_carteret = r.get("nasdaq_carteret_short_volume", 0) or 0
+                nas_chicago = r.get("nasdaq_chicago_short_volume", 0) or 0
                 
-                # 다크풀 비율 = (다크풀 숏 / 전체 숏)
-                # short_volume 이 있을 때만 계산, 없으면 0
-                if short_vol and short_vol > 0:
-                    dark_pool_ratio = dark_pool_short / short_vol
-                else:
-                    dark_pool_ratio = 0
+                dark_short = adf + nas_carteret + nas_chicago
+                dark_pool_ratio = (dark_short / short_vol) if short_vol > 0 else 0.0
+                # 0~1 클램프
+                if dark_pool_ratio > 1:
+                    dark_pool_ratio = 1.0
                 
-                # 값 저장 — 추정/임의값 없음, API가 준 그대로
-                entry = {
-                    "short_volume": short_vol or 0,
-                    "total_volume_sv": total_vol or 0,
-                    "short_volume_ratio": (sv_ratio / 100) if sv_ratio else 0,   # 0~1 정규화
+                result[ticker] = {
+                    "short_volume": short_vol,
+                    "total_volume": total_vol,
+                    "short_volume_ratio": sv_ratio,
                     "dark_pool_ratio": dark_pool_ratio,
-                    "sv_date": row.get("date"),
+                    "date": r.get("date", ""),
                 }
-                result[tk] = entry
             
+            # 다음 페이지
             next_url = data.get("next_url")
-            if next_url and "apiKey=" not in next_url:
-                next_url += f"&apiKey={POLYGON_API_KEY}"
-            pages += 1
-            
-        except Exception as e:
-            print(f"  ⚠️ short-volume 에러: {e}")
-            break
+            page_count += 1
+        
+        print(f"✅ Short Volume: {len(result)}개 (페이지 {page_count})")
+        return result
     
-    print(f"  ✅ Short Volume: {len(result)}개")
-    return result
+    except Exception as e:
+        print(f"❌ fetch_short_volume_batch 실패: {e}")
+        return result
+
 
 
 
@@ -610,134 +625,156 @@ def fetch_macd(sym: str) -> dict:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def fetch_options_chain(sym):
     """
-    옵션 체인 스냅샷 - 감마 집중도, C/P 비율, 이상 옵션 활동 계산
-    엔드포인트: /v3/snapshot/options/{underlying}
+    종목별 옵션 체인 수집 + 감마/콜풋비율/특이옵션/맥스페인 계산.
+    
+    Returns:
+        dict: {
+            "gamma_concentration": float (0~1),
+            "call_put_ratio": float,
+            "unusual_options_score": float (0~100),
+            "max_pain": float,
+            "total_call_oi": int,
+            "total_put_oi": int,
+            "total_call_volume": int,
+            "total_put_volume": int,
+            "avg_iv": float,
+            "contract_count": int,
+            "timestamp": float
+        }
     """
-    if not _key_ok():
-        return {}
+    from app.config import POLYGON_API_KEY
+    import requests
+    import time as _time
+    
+    url = f"https://api.polygon.io/v3/snapshot/options/{sym}"
+    params = {
+        "limit": 250,
+        "apiKey": POLYGON_API_KEY,
+    }
+    
+    contracts = []
+    page_count = 0
+    max_pages = 4  # 최대 4페이지 (1000건)
+    next_url = url
     
     try:
-        url = f"https://api.polygon.io/v3/snapshot/options/{sym}"
-        params = {"limit": 250, "apiKey": POLYGON_API_KEY}
-        
-        all_contracts = []
-        pages = 0
-        next_url = url
-        
-        while next_url and pages < 4:   # 최대 4페이지 (1000 계약)
-            if pages == 0:
-                r = requests.get(next_url, params=params, timeout=15)
+        while next_url and page_count < max_pages:
+            if page_count == 0:
+                resp = requests.get(next_url, params=params, timeout=20)
             else:
-                # next_url 에 이미 apiKey 가 없으면 추가
-                if "apiKey=" not in next_url:
-                    sep = "&" if "?" in next_url else "?"
-                    next_url = f"{next_url}{sep}apiKey={POLYGON_API_KEY}"
-                r = requests.get(next_url, timeout=15)
+                sep = "&" if "?" in next_url else "?"
+                resp = requests.get(
+                    f"{next_url}{sep}apiKey={POLYGON_API_KEY}",
+                    timeout=20
+                )
             
-            if r.status_code != 200:
-                # 옵션 없는 종목 (대부분)은 그냥 빈 결과
-                return {}
-            
-            data = r.json()
-            contracts = data.get("results", []) or []
-            if not contracts:
+            if resp.status_code != 200:
+                if resp.status_code == 404:
+                    return {}  # 옵션 없는 종목
+                print(f"⚠️ Options {sym} HTTP {resp.status_code}")
                 break
-            all_contracts.extend(contracts)
+            
+            data = resp.json()
+            results = data.get("results", [])
+            
+            if not results:
+                break
+            
+            contracts.extend(results)
             
             next_url = data.get("next_url")
-            pages += 1
+            page_count += 1
         
-        if not all_contracts:
+        if not contracts:
             return {}
         
-        # === 집계 계산 (추정값 없음, API 데이터만) ===
-        total_call_oi = 0
-        total_put_oi = 0
-        total_call_volume = 0
-        total_put_volume = 0
-        iv_sum = 0
-        iv_count = 0
-        
-        # 행사가별 OI 집계 (Max Pain 계산용)
-        strike_oi = {}      # strike -> {call_oi, put_oi}
-        otm_call_oi = 0     # OTM 콜 OI (감마 집중도)
-        
-        # 현재가 추출 (계약에 들어있음)
+        # 현재가 추출 (첫 컨트랙트의 underlying_asset.price)
         underlying_price = 0
-        for c in all_contracts:
+        for c in contracts:
             ua = c.get("underlying_asset", {}) or {}
-            p = ua.get("price")
-            if p and p > 0:
+            p = ua.get("price", 0) or 0
+            if p > 0:
                 underlying_price = p
                 break
         
-        # 이상 옵션 활동: 거래량 > OI 인 계약 개수
+        total_call_oi = 0
+        total_put_oi = 0
+        total_call_vol = 0
+        total_put_vol = 0
+        otm_call_oi = 0
         unusual_count = 0
+        iv_sum = 0.0
+        iv_count = 0
+        strike_oi = {}  # for max pain: {strike: {"call": oi, "put": oi}}
         
-        for c in all_contracts:
+        for c in contracts:
             details = c.get("details", {}) or {}
             day = c.get("day", {}) or {}
-            greeks = c.get("greeks", {}) or {}
-            
-            ctype = details.get("contract_type")   # "call" or "put"
-            strike = details.get("strike_price", 0) or 0
             oi = c.get("open_interest", 0) or 0
             vol = day.get("volume", 0) or 0
             iv = c.get("implied_volatility", 0) or 0
+            
+            ctype = details.get("contract_type", "")  # "call" or "put"
+            strike = details.get("strike_price", 0) or 0
             
             if iv > 0:
                 iv_sum += iv
                 iv_count += 1
             
-            # 이상 옵션: 거래량이 OI 의 2배 초과
-            if oi > 0 and vol > oi * 2 and vol > 100:
+            # 특이 옵션: 거래량 > 2*OI 그리고 거래량 > 100
+            if oi > 0 and vol > 2 * oi and vol > 100:
                 unusual_count += 1
             
-            # 행사가별 집계
-            if strike not in strike_oi:
-                strike_oi[strike] = {"call": 0, "put": 0}
-            
-            if ctype == "call":
-                total_call_oi += oi
-                total_call_volume += vol
-                strike_oi[strike]["call"] += oi
-                # OTM 콜 (현재가보다 행사가 높음)
-                if underlying_price > 0 and strike > underlying_price:
-                    otm_call_oi += oi
-            elif ctype == "put":
-                total_put_oi += oi
-                total_put_volume += vol
-                strike_oi[strike]["put"] += oi
+            # strike별 OI 집계 (max pain용)
+            if strike > 0:
+                if strike not in strike_oi:
+                    strike_oi[strike] = {"call": 0, "put": 0}
+                
+                if ctype == "call":
+                    total_call_oi += oi
+                    total_call_vol += vol
+                    strike_oi[strike]["call"] += oi
+                    # OTM call: strike > 현재가
+                    if underlying_price > 0 and strike > underlying_price:
+                        otm_call_oi += oi
+                
+                elif ctype == "put":
+                    total_put_oi += oi
+                    total_put_vol += vol
+                    strike_oi[strike]["put"] += oi
         
-        # 감마 집중도 = OTM 콜 OI / 전체 콜 OI
-        gamma_concentration = (otm_call_oi / total_call_oi) if total_call_oi > 0 else 0
+        # 감마 집중도: OTM 콜 OI / 전체 콜 OI
+        gamma_conc = (otm_call_oi / total_call_oi) if total_call_oi > 0 else 0.0
         
-        # C/P 비율 (거래량 기준)
-        call_put_ratio = (total_call_volume / total_put_volume) if total_put_volume > 0 else 0
+        # 콜풋 비율 (거래량 기준)
+        cp_ratio = (total_call_vol / total_put_vol) if total_put_vol > 0 else 0.0
         
-        # 이상 옵션 점수 (0~100)
-        unusual_score = min(100, unusual_count * 10)
+        # 특이 옵션 점수 (컨트랙트 대비 비율 → 0~100)
+        uo_score = (unusual_count / len(contracts) * 1000) if contracts else 0
+        uo_score = min(uo_score, 100)
         
-        # Max Pain 계산
-        max_pain = _calc_max_pain(strike_oi) if strike_oi else 0
+        # Max Pain
+        max_pain = _calc_max_pain(strike_oi)
         
-        # IV 평균
-        iv_avg = (iv_sum / iv_count) if iv_count > 0 else 0
+        # 평균 IV
+        avg_iv = (iv_sum / iv_count) if iv_count > 0 else 0
         
         return {
-            "gamma_concentration": gamma_concentration,
-            "call_put_ratio": call_put_ratio,
-            "unusual_options_score": unusual_score,
-            "max_pain": max_pain,
+            "gamma_concentration": round(gamma_conc, 4),
+            "call_put_ratio": round(cp_ratio, 3),
+            "unusual_options_score": round(uo_score, 1),
+            "max_pain": round(max_pain, 2),
             "total_call_oi": total_call_oi,
             "total_put_oi": total_put_oi,
-            "total_call_volume": total_call_volume,
-            "total_put_volume": total_put_volume,
-            "iv_avg": iv_avg,
-            "options_contracts_count": len(all_contracts),
-            "options_updated_at": time.time(),
+            "total_call_volume": total_call_vol,
+            "total_put_volume": total_put_vol,
+            "avg_iv": round(avg_iv, 4),
+            "contract_count": len(contracts),
+            "timestamp": _time.time(),
         }
+    
     except Exception as e:
+        print(f"❌ fetch_options_chain({sym}) 실패: {e}")
         return {}
 
 
