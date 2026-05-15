@@ -343,24 +343,48 @@ def _refresh_grouped():
     if not data:
         return
     
+    # 🛡️ 응답이 list인지 확인 (dict면 .values()로 변환)
+    if isinstance(data, dict):
+        # {ticker: {...}} 형태일 수도 있고, {"results": [...]} 형태일 수도 있음
+        if "results" in data:
+            data = data["results"]
+        else:
+            data = list(data.values())
+    
+    if not isinstance(data, list):
+        print(f"⚠️ grouped 응답 형식 이상: {type(data).__name__}")
+        return
+    
     updated = 0
     dirty_added = 0
+    skipped = 0
+    
     for row in data:
-        sym = row.get("T")
-        if not sym or sym not in state.symbols:
+        # 🛡️ row가 dict가 아니면 스킵
+        if not isinstance(row, dict):
+            skipped += 1
             continue
         
-        d = state.symbols[sym]
-        old_price = d.get("price", 0)
-        new_price = row.get("c", 0)
-        new_vol = row.get("v", 0)
+        sym = row.get("T") or row.get("ticker") or row.get("symbol")
+        # ✅ state.stocks 로 통일 (state.symbols 아님!)
+        if not sym or sym not in state.stocks:
+            continue
+        
+        d = state.stocks[sym]
+        if not isinstance(d, dict):
+            skipped += 1
+            continue
+        
+        old_price = d.get("price", 0) or 0
+        new_price = row.get("c", 0) or row.get("close", 0) or 0
+        new_vol = row.get("v", 0) or row.get("volume", 0) or 0
         
         if new_price > 0:
             d["price"] = new_price
             d["volume"] = new_vol
             updated += 1
             
-            # 0.3% 이상 변동시 dirty 마크 (1% → 0.3%로 완화)
+            # 0.3% 이상 변동시 dirty 마크
             if old_price > 0:
                 change = abs(new_price - old_price) / old_price
                 if change > 0.003:
@@ -370,7 +394,10 @@ def _refresh_grouped():
     # 10번에 1번만 출력 (≈ 5분마다)
     _grouped_log_counter += 1
     if _grouped_log_counter % 10 == 1:
-        print(f"  📡 grouped: {len(data)}개 수신, {updated}개 적용, dirty +{dirty_added}")
+        msg = f"  📡 grouped: {len(data)}개 수신, {updated}개 적용, dirty +{dirty_added}"
+        if skipped > 0:
+            msg += f", skipped {skipped}"
+        print(msg)
 
 
 
@@ -658,7 +685,9 @@ def tick_loop():
             if state.ready:
                 tick_once()
         except Exception as e:
+            import traceback
             print(f"❌ tick 오류: {e}")
+            traceback.print_exc()
         time.sleep(5)
 
 
